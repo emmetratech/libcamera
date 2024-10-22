@@ -978,7 +978,16 @@ int CameraHelperMx95mbcam::sensorControlsToMetaData(const ControlList *sensorCtr
 			reinterpret_cast<const struct ox03c10_wb_capture_gain *>(data.data());
 
 		std::array<uint32_t, 4> wbGainCodes = { wb->r, wb->gr, wb->gb, wb->b };
-		whiteBalanceGains(Span<uint32_t>(wbGainCodes), Span<float>(wbGainsArray));
+		auto iter = std::find(wbGainCodes.begin(), wbGainCodes.end(), 0);
+		/*
+		 * In case WB gains are reported from sensor with value 0.0f,
+		 * wbGain should be forced to default value 1.0f for
+		 * valid processing.
+		 * Hence avoid updating wbGainArray with wbGainCodes
+		 */
+		if (iter == wbGainCodes.end())
+			whiteBalanceGains(Span<uint32_t>(wbGainCodes),
+					  Span<float>(wbGainsArray));
 	} else {
 		/* Do nothing - optional control */
 	}
