@@ -519,7 +519,7 @@ void CameraHelperMx95mbcam::controlListSetAGC(
 		/* minGain for L, recalculated by conv_ratio */
 		lMinGainL = lMinGainS * sensorConversionRatio / Q16_1;
 	} else {
-		/* minGain for S, recalculated by ratio */
+		/* minGain for L, recalculated by ratio */
 		lMinGainL = lMinGainS * lRatioL2S / Q16_1;
 	}
 
@@ -561,7 +561,7 @@ void CameraHelperMx95mbcam::controlListSetAGC(
 		/**
 		 * \note <= is used instead of < because if kMinVsExposureLines is 0
 		 * then the expression would be always false and the compiler
-		 * might issue a warning than will be treated as error due to compiler flags
+		 * might issue a warning that will be treated as error due to compiler flags
 		 */
 		if (lExpVSinRows <= kMinVsExposureLines) {
 			lExpVSinRows = kMinVsExposureLines;
