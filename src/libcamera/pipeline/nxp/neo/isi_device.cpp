@@ -165,6 +165,7 @@ int ISIPipe::configure(const V4L2SubdeviceFormat &sinkFormat,
 
 	sourceFormat->fourcc = formats.at(code);
 	sourceFormat->size = sinkFormat.size;
+	sourceFormat->colorSpace = sinkFormat.colorSpace;
 
 	/* \todo Set stride and format. */
 	ret = output_->setFormat(sourceFormat);
