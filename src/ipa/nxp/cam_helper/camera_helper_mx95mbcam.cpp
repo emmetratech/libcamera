@@ -16,6 +16,7 @@
 #include "md_parser_ox.h"
 
 #define ENABLE_EMBEDDED_DATA 1
+#define USE_CUSTOM_CONTROLS 0
 
 #define Q8_1 (0x100U)
 #define Q10_1 (0x400U)
@@ -172,8 +173,10 @@ public:
 	uint32_t gainCode(double gain) const override;
 	double gain(uint32_t gainCode) const override;
 
+#if USE_CUSTOM_CONTROLS
 	void controlListSetAGC(
 		ControlList *ctrls, double exposure, double gain) const override;
+#endif
 
 	virtual void controlInfoMapGetExposureRange(
 		const ControlInfoMap *ctrls, std::vector<double> *minExposure,
@@ -183,13 +186,17 @@ public:
 		const ControlInfoMap *ctrls, std::vector<double> *minGain,
 		std::vector<double> *maxGain, std::vector<double> *defGain) const;
 
+#if USE_CUSTOM_CONTROLS
 	void controlListSetAWB(
 		ControlList *ctrls, const Span<const double, 4> gains) const override;
+#endif
 
 	int parseEmbedded(Span<const uint8_t> buffer, ControlList *mdControls) override;
 
+#if USE_CUSTOM_CONTROLS
 	int sensorControlsToMetaData(
 		const ControlList *sensorCtrls, ControlList *mdCtrls) const override;
+#endif
 
 private:
 	uint32_t calcConvRatio(uint32_t ratio) const;
@@ -282,7 +289,16 @@ private:
 	/* 23281us */
 	static constexpr uint32_t kMaxExposureLines = kVts - kMaxVsExposureLines - 12U - 1U;
 
+#if USE_CUSTOM_CONTROLS
 	static constexpr uint32_t kRowTimeNs = (kHts * 1000U) / kSclk;
+#else
+	/*
+	 * Use the actual values from the driver because the ones defined by the
+	 * camHelper distribution function are not correct:
+	 * double row time = 2 * hts / pixel clock = 2 * 2186 / 90MHz
+	 */
+	static constexpr uint32_t kRowTimeNs = (2 * 2186 * 1000 / 90);
+#endif
 
 	/* gain conversion ratio of HCG/LCG \todo should get from OTP sensor data */
 	static constexpr uint32_t kConvGainQ16 = 7.32f * Q16_1;
@@ -304,6 +320,9 @@ CameraHelperMx95mbcam::CameraHelperMx95mbcam()
 {
 	/* Adapt the default delayedControls for the ox03c10 custom controls */
 	attributes_.delayedControlParams = {
+		{ V4L2_CID_ANALOGUE_GAIN, { 3, false } },
+		{ V4L2_CID_DIGITAL_GAIN, { 3, false } },
+		{ V4L2_CID_EXPOSURE, { 3, false } },
 		{ V4L2_CID_OX03C10_ANALOGUE_GAIN, { 3, false } },
 		{ V4L2_CID_OX03C10_DIGITAL_GAIN, { 3, false } },
 		{ V4L2_CID_OX03C10_EXPOSURE, { 3, false } },
@@ -325,29 +344,14 @@ CameraHelperMx95mbcam::CameraHelperMx95mbcam()
 
 uint32_t CameraHelperMx95mbcam::gainCode(double gain) const
 {
-	/* Analog gain is Q4.4 with variable fractional resolution */
-	if (gain >= kMaxAnalogGain)
-		gain = kMaxAnalogGain;
-	else if (gain < kMinAnalogGain)
-		gain = kMinAnalogGain;
-
-	uint32_t code;
-	if (gain >= 8.0)
-		code = (static_cast<int>(std::ceil(gain * 2.0)) << 3);
-	else if (gain >= 4.0)
-		code = (static_cast<int>(std::ceil(gain * 4.0)) << 2);
-	else if (gain >= 2.0)
-		code = (static_cast<int>(std::ceil(gain * 8.0)) << 1);
-	else
-		code = static_cast<int>(std::ceil(gain * 16.0));
-
-	return code;
+	/* V4L2_CID_ANALOGUE_GAIN code is Q16.16 */
+	return static_cast<uint32_t>(gain * (1 << 16));
 }
 
 double CameraHelperMx95mbcam::gain(uint32_t gainCode) const
 {
-	/* Analog gain is Q4.4 */
-	return static_cast<double>(gainCode) * 0.0625;
+	/* V4L2_CID_ANALOGUE_GAIN code is Q16.16 */
+	return (gainCode * 1.0 /  (1 << 16));
 }
 
 /**
@@ -449,6 +453,7 @@ uint32_t CameraHelperMx95mbcam::distributeDigitalGain(
 	return gain;
 }
 
+#if USE_CUSTOM_CONTROLS
 void CameraHelperMx95mbcam::controlListSetAGC(
 	ControlList *ctrls, double exposure, double gain) const
 {
@@ -656,6 +661,7 @@ void CameraHelperMx95mbcam::controlListSetAGC(
 		sizeof(v4l2DigitalGains));
 	ctrls->set(V4L2_CID_OX03C10_DIGITAL_GAIN, digitalGainsData);
 }
+#endif
 
 void CameraHelperMx95mbcam::controlInfoMapGetExposureRange(
 	const ControlInfoMap *ctrls, std::vector<double> *minExposure,
@@ -810,6 +816,7 @@ int CameraHelperMx95mbcam::parseEmbedded(Span<const uint8_t> buffer,
 	return 0;
 }
 
+#if USE_CUSTOM_CONTROLS
 void CameraHelperMx95mbcam::controlListSetAWB(
 	ControlList *ctrls, Span<const double, 4> gains) const
 {
@@ -945,6 +952,7 @@ int CameraHelperMx95mbcam::sensorControlsToMetaData(const ControlList *sensorCtr
 
 	return ret;
 }
+#endif
 
 Span<float> CameraHelperMx95mbcam::analogGains(
 	Span<const uint32_t> gainCodes, Span<float> gains) const
