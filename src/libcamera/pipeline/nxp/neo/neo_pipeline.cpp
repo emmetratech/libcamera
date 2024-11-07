@@ -312,8 +312,20 @@ CameraConfiguration::Status NxpNeoCameraConfiguration::validate()
 			   (info.planes[0].bytesPerGroup <= 2) &&
 			   (info.planes[1].bytesPerGroup == 0)) {
 			/*  pixel formats Rn detection (grey/Yn) */
-			irCount++;
-			cfg.setStream(streamIr);
+			if (data_->sensorIsRgbIr()) {
+				/* iR stream handles only Y8 and Y16 formats */
+				if ((irCount == 0) &&
+				    ((info.bitsPerPixel % 8u) == 0)) {
+					irCount++;
+					cfg.setStream(streamIr);
+				} else {
+					yuvRgbCount++;
+					cfg.setStream(streamFrame);
+				}
+			} else {
+				yuvRgbCount++;
+				cfg.setStream(streamFrame);
+			}
 		} else if ((info.colourEncoding == PixelFormatInfo::ColourEncodingYUV) ||
 			   (info.colourEncoding == PixelFormatInfo::ColourEncodingRGB)) {
 			yuvRgbCount++;
@@ -332,9 +344,6 @@ CameraConfiguration::Status NxpNeoCameraConfiguration::validate()
 		return Invalid;
 	} else if (irCount > 1) {
 		LOG(NxpNeoPipe, Debug) << "Multiple Ir streams not supported";
-		return Invalid;
-	} else if ((irCount > 1) && !data_->sensorIsRgbIr()) {
-		LOG(NxpNeoPipe, Debug) << "Sensor has no RGB-Ir support";
 		return Invalid;
 	}
 
