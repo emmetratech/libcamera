@@ -637,7 +637,6 @@ int PipelineHandlerNxpNeo::queueRequestDevice(Camera *camera, Request *request)
 bool PipelineHandlerNxpNeo::match(DeviceEnumerator *enumerator)
 {
 	int ret;
-	constexpr unsigned int kMaxNeoDevices = 8;
 
 	/*
 	 * Prerequisite for pipeline operation is that frontend media controller
@@ -659,30 +658,6 @@ bool PipelineHandlerNxpNeo::match(DeviceEnumerator *enumerator)
 		return false;
 	}
 
-	/*
-	 * Discover Neo ISP media controller devices
-	 */
-	std::queue<MediaDevice *> neos;
-	MediaDevice *neoDev;
-	DeviceMatch isp(NeoDevice::kDriverName());
-	isp.add(NeoDevice::kSDevNeoEntityName());
-	isp.add(NeoDevice::kVDevInput0EntityName());
-	isp.add(NeoDevice::kVDevInput1EntityName());
-	isp.add(NeoDevice::kVDevEntityParamsName());
-	isp.add(NeoDevice::kVDevEntityFrameName());
-	isp.add(NeoDevice::kVDevEntityIrName());
-	isp.add(NeoDevice::kVDevEntityStatsName());
-
-	for (unsigned int i = 0; i < kMaxNeoDevices; i++) {
-		neoDev = acquireMediaDevice(enumerator, isp);
-		if (neoDev)
-			neos.push(neoDev);
-	}
-	if (!neos.size()) {
-		LOG(NxpNeoPipe, Debug) << "No ISP media device";
-		return false;
-	}
-
 	ret = loadPipelineConfig();
 	if (ret)
 		return false;
@@ -692,21 +667,30 @@ bool PipelineHandlerNxpNeo::match(DeviceEnumerator *enumerator)
 	 * Bind each camera to an ISP entity
 	 */
 	numCameras_ = 0;
+
+	DeviceMatch isp(NeoDevice::kDriverName());
+	isp.add(NeoDevice::kSDevNeoEntityName());
+	isp.add(NeoDevice::kVDevInput0EntityName());
+	isp.add(NeoDevice::kVDevInput1EntityName());
+	isp.add(NeoDevice::kVDevEntityParamsName());
+	isp.add(NeoDevice::kVDevEntityFrameName());
+	isp.add(NeoDevice::kVDevEntityIrName());
+	isp.add(NeoDevice::kVDevEntityStatsName());
+
 	for (MediaEntity *entity : isiMedia_->entities()) {
 		if (entity->function() != MEDIA_ENT_F_CAM_SENSOR)
 			continue;
 
-		if (!neos.size())
+		MediaDevice *neoDevice = acquireMediaDevice(enumerator, isp);
+		if (!neoDevice)
 			break;
 
-		ret = createCamera(entity, neos.front(), numCameras_);
-		if (ret) {
+		ret = createCamera(entity, neoDevice, numCameras_);
+		if (ret)
 			LOG(NxpNeoPipe, Warning) << "Failed to probe camera "
 					     << entity->name() << ": " << ret;
-		} else {
+		else
 			numCameras_++;
-			neos.pop();
-		}
 	}
 
 	if (numCameras_ < 1)
