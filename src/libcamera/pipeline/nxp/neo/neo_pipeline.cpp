@@ -89,6 +89,7 @@ public:
 				    Transform transform);
 
 	CameraSensor *sensor() const { return sensor_.get(); }
+	NeoDevice *neoDevice() const { return neo_.get(); }
 	std::string cameraName() const { return sensor_->entity()->name(); }
 
 	bool rawStreamOnly_ = false;
@@ -412,10 +413,30 @@ CameraConfiguration::Status NxpNeoCameraConfiguration::validate()
 			cfg->stride = info.stride(cfg->size.width, 0, 1);
 			cfg->frameSize = info.frameSize(cfg->size, 1);
 
+			V4L2DeviceFormat format = {};
+			format.size = cfg->size;
+			format.fourcc = (V4L2PixelFormat::fromPixelFormat(cfg->pixelFormat))[0];
+			format.colorSpace = cfg->colorSpace;
+
+			/* For frame stream, the user can choose the
+			 * sRGB colorspace for the RGB output formats.
+			 * The sRGB colorspace conversion from libcamera
+			 * to v4l2 is not directly supported, so use
+			 * libcamera sYCC instead that maps to v4l2
+			 * JPEG colorspace that is a v4l2 sRGB alias.
+			 */
+			if (format.colorSpace == ColorSpace::Srgb)
+				format.colorSpace = ColorSpace::Sycc;
+
+			if (isFrame) {
+				data_->neoDevice()->frame_->tryFormat(&format);
+				cfg->colorSpace = format.colorSpace;
+			}
+
 			LOG(NxpNeoPipe, Debug) << "Assigned " << cfg->toString()
-					   << " to the "
-					   << (isFrame ? "frame" : "ir")
-					   << " stream";
+					       << " to the "
+					       << (isFrame ? "frame" : "ir")
+					       << " stream";
 		} else if (isRaw) {
 			cfg->pixelFormat = rawPixelFormat;
 			cfg->size = sensorSize;
@@ -425,35 +446,13 @@ CameraConfiguration::Status NxpNeoCameraConfiguration::validate()
 			cfg->frameSize = info.frameSize(cfg->size, 64);
 
 			LOG(NxpNeoPipe, Debug) << "Assigned " << cfg->toString()
-					   << " to the raw stream";
+					       << " to the raw stream";
 		} else {
 			LOG(NxpNeoPipe, Error) << "Unknown configuration stream";
 			return Invalid;
 		}
 
 		cfg->bufferCount = NxpNeoCameraConfiguration::kBufferCount;
-
-		/*
-		 * Linux driver currently supports only sRGB color space for the
-		 * decoded frame output.
-		 * Infrared grayscale stream is considered as raw because it has
-		 * full range encoding and is not gamma corrected. Thus, do not
-		 * use ColorSpace::adjust() method here, as that would override
-		 * the linear transfer function, as it considers grayscale to be
-		 * a YUV format unlikely to be linear.
-		 * Thus, both infrared and raw streams are associated to a raw
-		 * color space.
-		 */
-		ColorSpace colorSpace = ColorSpace::Raw;
-		if (isFrame) {
-			const PixelFormatInfo &info = PixelFormatInfo::info(cfg->pixelFormat);
-			colorSpace = ColorSpace::Srgb;
-			if (info.colourEncoding == PixelFormatInfo::ColourEncodingYUV) {
-				colorSpace.ycbcrEncoding = ColorSpace::YcbcrEncoding::Rec601;
-				colorSpace.range = ColorSpace::Range::Limited;
-			}
-		}
-		cfg->colorSpace = colorSpace;
 
 		if (cfg->pixelFormat != originalCfg.pixelFormat ||
 		    cfg->size != originalCfg.size) {
@@ -493,6 +492,7 @@ PipelineHandlerNxpNeo::generateConfiguration(Camera *camera,
 	PixelFormat rawPixelFormat;
 	unsigned int rawCode = data->getRawMediaBusFormat(&rawPixelFormat);
 	std::vector<Size> sensorSizes = sensor->sizes(rawCode);
+	std::optional<ColorSpace> colorSpace;
 
 	/* Top embedded data from sensor are cropped before being fed to ISP */
 	std::vector<Size> pixelSizes(sensorSizes);
@@ -546,9 +546,11 @@ PipelineHandlerNxpNeo::generateConfiguration(Camera *camera,
 			 */
 			if (frameOutputAvailable) {
 				pixelFormat = frameFormats[0].toPixelFormat();
+				colorSpace = ColorSpace::Sycc;
 				frameOutputAvailable = false;
 			} else if (irOutputAvailable) {
 				pixelFormat = irFormats[0].toPixelFormat();
+				colorSpace = ColorSpace::Raw;
 				irOutputAvailable = false;
 			} else {
 				LOG(NxpNeoPipe, Error) << "Too many yuv/rgb streams";
@@ -569,6 +571,7 @@ PipelineHandlerNxpNeo::generateConfiguration(Camera *camera,
 				return nullptr;
 			}
 			pixelFormat = rawPixelFormat;
+			colorSpace = ColorSpace::Raw;
 			streamFormats[pixelFormat] = sensorRanges;
 			rawOutputAvailable = false;
 			cfgSize = sensorSizes.back();
@@ -585,6 +588,7 @@ PipelineHandlerNxpNeo::generateConfiguration(Camera *camera,
 		StreamConfiguration cfg(formats);
 		cfg.size = cfgSize;
 		cfg.pixelFormat = pixelFormat;
+		cfg.colorSpace = colorSpace;
 		cfg.bufferCount = NxpNeoCameraConfiguration::kBufferCount;
 
 		config->addConfiguration(cfg);
@@ -941,7 +945,14 @@ int NxpNeoCameraData::configure(CameraConfiguration *c)
 				stream == &streamFrame_ ? devFormatFrame : devFormatIr;
 			devFormat.size = cfg.size;
 			devFormat.fourcc = fmt;
-			devFormat.colorSpace = cfg.colorSpace;
+
+			/* Use libcamera sYCC colorspace definition that maps
+			 * to a v4l2 sRGB colorspace equivalent.
+			 */
+			if (cfg.colorSpace == ColorSpace::Srgb)
+				devFormat.colorSpace = ColorSpace::Sycc;
+			else
+				devFormat.colorSpace = cfg.colorSpace;
 		}
 
 		NeoDevice::PipeConfig pipeConfig = {};
