@@ -697,7 +697,7 @@ void CameraHelperMx95mbcam::controlInfoMapGetAnalogGainRange(
 }
 
 int CameraHelperMx95mbcam::parseEmbedded(Span<const uint8_t> buffer,
-					  ControlList *mdControls)
+					 ControlList *mdControls)
 {
 	if (!buffer.size())
 		return -1;
