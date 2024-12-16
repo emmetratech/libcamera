@@ -1516,6 +1516,7 @@ int NxpNeoCameraData::loadIPA()
 	ipa::nxpneo::SensorConfig sensorConfig;
 	ret = ipa_->init(IPASettings{ ipaTuningFile, sensor->model() },
 			 hwRevision,
+			 sensor->id(),
 			 sensorInfo, sensor->controls(),
 			 &ipaControls_,
 			 &sensorConfig);
