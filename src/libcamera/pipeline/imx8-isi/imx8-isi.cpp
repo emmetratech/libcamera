@@ -144,6 +144,8 @@ private:
 
 	std::unique_ptr<V4L2Subdevice> crossbar_;
 	std::vector<Pipe> pipes_;
+
+	unsigned int sequence_ = 0;
 };
 
 /* -----------------------------------------------------------------------------
@@ -691,7 +693,7 @@ StreamConfiguration PipelineHandlerISI::generateYUVConfiguration(Camera *camera,
 	StreamConfiguration cfg(formats);
 	cfg.pixelFormat = pixelFormat;
 	cfg.size = sensorSize;
-	cfg.bufferCount = 4;
+	cfg.bufferCount = 5;
 
 	return cfg;
 }
@@ -759,7 +761,7 @@ StreamConfiguration PipelineHandlerISI::generateRawConfiguration(Camera *camera)
 	StreamConfiguration cfg(formats);
 	cfg.size = sensor->resolution();
 	cfg.pixelFormat = pixelFormat;
-	cfg.bufferCount = 4;
+	cfg.bufferCount = 5;
 
 	return cfg;
 }
@@ -965,6 +967,9 @@ int PipelineHandlerISI::start(Camera *camera,
 			      [[maybe_unused]] const ControlList *controls)
 {
 	ISICameraData *data = cameraData(camera);
+
+	/* Reset frame counter */
+	sequence_ = 0;
 
 	for (const auto &stream : data->enabledStreams_) {
 		Pipe *pipe = pipeFromStream(camera, stream);
@@ -1190,6 +1195,13 @@ void PipelineHandlerISI::bufferReady(FrameBuffer *buffer)
 	if (!metadata.contains(controls::SensorTimestamp.id()))
 		metadata.set(controls::SensorTimestamp,
 			     buffer->metadata().timestamp);
+
+	unsigned int seq = buffer->metadata().sequence;
+	if (seq != sequence_)
+		LOG(ISI, Warning)
+			<< "Input frame loss! expected " << sequence_
+			<< " received " << seq;
+	sequence_ = seq + 1;
 
 	completeBuffer(request, buffer);
 	if (request->hasPendingBuffers())

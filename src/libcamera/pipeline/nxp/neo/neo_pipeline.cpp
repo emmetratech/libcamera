@@ -44,6 +44,7 @@
 #include "libcamera/internal/ipa_manager.h"
 #include "libcamera/internal/media_device.h"
 #include "libcamera/internal/pipeline_handler.h"
+#include "libcamera/internal/request.h"
 
 #include "frames.h"
 #include "isi_device.h"
@@ -77,7 +78,6 @@ public:
 	void stopDevice();
 
 	void queuePendingRequests();
-	void cancelPendingRequests();
 
 	int init();
 	PipelineHandlerNxpNeo *pipe();
@@ -89,6 +89,7 @@ public:
 				    Transform transform);
 
 	CameraSensor *sensor() const { return sensor_.get(); }
+	NeoDevice *neoDevice() const { return neo_.get(); }
 	std::string cameraName() const { return sensor_->entity()->name(); }
 
 	bool rawStreamOnly_ = false;
@@ -115,7 +116,8 @@ private:
 				    V4L2SubdeviceFormat &sdFormat);
 	int configureFrontEndLinks() const;
 
-	bool screenCancelledBuffer(FrameBuffer *buffer, NxpNeoFrames::Info *info);
+	bool completeCancelledBufferRequest(FrameBuffer *buffer, NxpNeoFrames::Info *info);
+	void completeProcessingRequest(Request *request);
 
 	int prepareISIPipeBuffers(ISIPipe *pipe, unsigned int bufferCount, unsigned int &id);
 
@@ -204,7 +206,6 @@ public:
 	void stopDevice(Camera *camera) override;
 
 	int queueRequestDevice(Camera *camera, Request *request) override;
-	void cancelRequest(Request *request);
 
 	bool match(DeviceEnumerator *enumerator) override;
 
@@ -312,8 +313,20 @@ CameraConfiguration::Status NxpNeoCameraConfiguration::validate()
 			   (info.planes[0].bytesPerGroup <= 2) &&
 			   (info.planes[1].bytesPerGroup == 0)) {
 			/*  pixel formats Rn detection (grey/Yn) */
-			irCount++;
-			cfg.setStream(streamIr);
+			if (data_->sensorIsRgbIr()) {
+				/* iR stream handles only Y8 and Y16 formats */
+				if ((irCount == 0) &&
+				    ((info.bitsPerPixel % 8u) == 0)) {
+					irCount++;
+					cfg.setStream(streamIr);
+				} else {
+					yuvRgbCount++;
+					cfg.setStream(streamFrame);
+				}
+			} else {
+				yuvRgbCount++;
+				cfg.setStream(streamFrame);
+			}
 		} else if ((info.colourEncoding == PixelFormatInfo::ColourEncodingYUV) ||
 			   (info.colourEncoding == PixelFormatInfo::ColourEncodingRGB)) {
 			yuvRgbCount++;
@@ -332,9 +345,6 @@ CameraConfiguration::Status NxpNeoCameraConfiguration::validate()
 		return Invalid;
 	} else if (irCount > 1) {
 		LOG(NxpNeoPipe, Debug) << "Multiple Ir streams not supported";
-		return Invalid;
-	} else if ((irCount > 1) && !data_->sensorIsRgbIr()) {
-		LOG(NxpNeoPipe, Debug) << "Sensor has no RGB-Ir support";
 		return Invalid;
 	}
 
@@ -403,10 +413,30 @@ CameraConfiguration::Status NxpNeoCameraConfiguration::validate()
 			cfg->stride = info.stride(cfg->size.width, 0, 1);
 			cfg->frameSize = info.frameSize(cfg->size, 1);
 
+			V4L2DeviceFormat format = {};
+			format.size = cfg->size;
+			format.fourcc = (V4L2PixelFormat::fromPixelFormat(cfg->pixelFormat))[0];
+			format.colorSpace = cfg->colorSpace;
+
+			/* For frame stream, the user can choose the
+			 * sRGB colorspace for the RGB output formats.
+			 * The sRGB colorspace conversion from libcamera
+			 * to v4l2 is not directly supported, so use
+			 * libcamera sYCC instead that maps to v4l2
+			 * JPEG colorspace that is a v4l2 sRGB alias.
+			 */
+			if (format.colorSpace == ColorSpace::Srgb)
+				format.colorSpace = ColorSpace::Sycc;
+
+			if (isFrame) {
+				data_->neoDevice()->frame_->tryFormat(&format);
+				cfg->colorSpace = format.colorSpace;
+			}
+
 			LOG(NxpNeoPipe, Debug) << "Assigned " << cfg->toString()
-					   << " to the "
-					   << (isFrame ? "frame" : "ir")
-					   << " stream";
+					       << " to the "
+					       << (isFrame ? "frame" : "ir")
+					       << " stream";
 		} else if (isRaw) {
 			cfg->pixelFormat = rawPixelFormat;
 			cfg->size = sensorSize;
@@ -416,35 +446,13 @@ CameraConfiguration::Status NxpNeoCameraConfiguration::validate()
 			cfg->frameSize = info.frameSize(cfg->size, 64);
 
 			LOG(NxpNeoPipe, Debug) << "Assigned " << cfg->toString()
-					   << " to the raw stream";
+					       << " to the raw stream";
 		} else {
 			LOG(NxpNeoPipe, Error) << "Unknown configuration stream";
 			return Invalid;
 		}
 
 		cfg->bufferCount = NxpNeoCameraConfiguration::kBufferCount;
-
-		/*
-		 * Linux driver currently supports only sRGB color space for the
-		 * decoded frame output.
-		 * Infrared grayscale stream is considered as raw because it has
-		 * full range encoding and is not gamma corrected. Thus, do not
-		 * use ColorSpace::adjust() method here, as that would override
-		 * the linear transfer function, as it considers grayscale to be
-		 * a YUV format unlikely to be linear.
-		 * Thus, both infrared and raw streams are associated to a raw
-		 * color space.
-		 */
-		ColorSpace colorSpace = ColorSpace::Raw;
-		if (isFrame) {
-			const PixelFormatInfo &info = PixelFormatInfo::info(cfg->pixelFormat);
-			colorSpace = ColorSpace::Srgb;
-			if (info.colourEncoding == PixelFormatInfo::ColourEncodingYUV) {
-				colorSpace.ycbcrEncoding = ColorSpace::YcbcrEncoding::Rec601;
-				colorSpace.range = ColorSpace::Range::Limited;
-			}
-		}
-		cfg->colorSpace = colorSpace;
 
 		if (cfg->pixelFormat != originalCfg.pixelFormat ||
 		    cfg->size != originalCfg.size) {
@@ -484,6 +492,7 @@ PipelineHandlerNxpNeo::generateConfiguration(Camera *camera,
 	PixelFormat rawPixelFormat;
 	unsigned int rawCode = data->getRawMediaBusFormat(&rawPixelFormat);
 	std::vector<Size> sensorSizes = sensor->sizes(rawCode);
+	std::optional<ColorSpace> colorSpace;
 
 	/* Top embedded data from sensor are cropped before being fed to ISP */
 	std::vector<Size> pixelSizes(sensorSizes);
@@ -537,9 +546,11 @@ PipelineHandlerNxpNeo::generateConfiguration(Camera *camera,
 			 */
 			if (frameOutputAvailable) {
 				pixelFormat = frameFormats[0].toPixelFormat();
+				colorSpace = ColorSpace::Sycc;
 				frameOutputAvailable = false;
 			} else if (irOutputAvailable) {
 				pixelFormat = irFormats[0].toPixelFormat();
+				colorSpace = ColorSpace::Raw;
 				irOutputAvailable = false;
 			} else {
 				LOG(NxpNeoPipe, Error) << "Too many yuv/rgb streams";
@@ -560,6 +571,7 @@ PipelineHandlerNxpNeo::generateConfiguration(Camera *camera,
 				return nullptr;
 			}
 			pixelFormat = rawPixelFormat;
+			colorSpace = ColorSpace::Raw;
 			streamFormats[pixelFormat] = sensorRanges;
 			rawOutputAvailable = false;
 			cfgSize = sensorSizes.back();
@@ -576,6 +588,7 @@ PipelineHandlerNxpNeo::generateConfiguration(Camera *camera,
 		StreamConfiguration cfg(formats);
 		cfg.size = cfgSize;
 		cfg.pixelFormat = pixelFormat;
+		cfg.colorSpace = colorSpace;
 		cfg.bufferCount = NxpNeoCameraConfiguration::kBufferCount;
 
 		config->addConfiguration(cfg);
@@ -625,29 +638,9 @@ int PipelineHandlerNxpNeo::queueRequestDevice(Camera *camera, Request *request)
 	return 0;
 }
 
-/**
- * \brief Cancel a \a Request.
- * \param[in] request The request to be cancelled
- *
- * Cancelling a request involves marking all its associated buffers as cancelled
- * before reporting them as complete with completeBuffer(). Finally, the request
- * itself is reported as complete with completeRequest().
- */
-void PipelineHandlerNxpNeo::cancelRequest(Request *request)
-{
-	for (auto it : request->buffers()) {
-		FrameBuffer *buffer = it.second;
-		buffer->_d()->cancel();
-		completeBuffer(request, buffer);
-	}
-
-	completeRequest(request);
-}
-
 bool PipelineHandlerNxpNeo::match(DeviceEnumerator *enumerator)
 {
 	int ret;
-	constexpr unsigned int kMaxNeoDevices = 8;
 
 	/*
 	 * Prerequisite for pipeline operation is that frontend media controller
@@ -669,30 +662,6 @@ bool PipelineHandlerNxpNeo::match(DeviceEnumerator *enumerator)
 		return false;
 	}
 
-	/*
-	 * Discover Neo ISP media controller devices
-	 */
-	std::queue<MediaDevice *> neos;
-	MediaDevice *neoDev;
-	DeviceMatch isp(NeoDevice::kDriverName());
-	isp.add(NeoDevice::kSDevNeoEntityName());
-	isp.add(NeoDevice::kVDevInput0EntityName());
-	isp.add(NeoDevice::kVDevInput1EntityName());
-	isp.add(NeoDevice::kVDevEntityParamsName());
-	isp.add(NeoDevice::kVDevEntityFrameName());
-	isp.add(NeoDevice::kVDevEntityIrName());
-	isp.add(NeoDevice::kVDevEntityStatsName());
-
-	for (unsigned int i = 0; i < kMaxNeoDevices; i++) {
-		neoDev = acquireMediaDevice(enumerator, isp);
-		if (neoDev)
-			neos.push(neoDev);
-	}
-	if (!neos.size()) {
-		LOG(NxpNeoPipe, Debug) << "No ISP media device";
-		return false;
-	}
-
 	ret = loadPipelineConfig();
 	if (ret)
 		return false;
@@ -702,21 +671,30 @@ bool PipelineHandlerNxpNeo::match(DeviceEnumerator *enumerator)
 	 * Bind each camera to an ISP entity
 	 */
 	numCameras_ = 0;
+
+	DeviceMatch isp(NeoDevice::kDriverName());
+	isp.add(NeoDevice::kSDevNeoEntityName());
+	isp.add(NeoDevice::kVDevInput0EntityName());
+	isp.add(NeoDevice::kVDevInput1EntityName());
+	isp.add(NeoDevice::kVDevEntityParamsName());
+	isp.add(NeoDevice::kVDevEntityFrameName());
+	isp.add(NeoDevice::kVDevEntityIrName());
+	isp.add(NeoDevice::kVDevEntityStatsName());
+
 	for (MediaEntity *entity : isiMedia_->entities()) {
 		if (entity->function() != MEDIA_ENT_F_CAM_SENSOR)
 			continue;
 
-		if (!neos.size())
+		MediaDevice *neoDevice = acquireMediaDevice(enumerator, isp);
+		if (!neoDevice)
 			break;
 
-		ret = createCamera(entity, neos.front(), numCameras_);
-		if (ret) {
+		ret = createCamera(entity, neoDevice, numCameras_);
+		if (ret)
 			LOG(NxpNeoPipe, Warning) << "Failed to probe camera "
 					     << entity->name() << ": " << ret;
-		} else {
+		else
 			numCameras_++;
-			neos.pop();
-		}
 	}
 
 	if (numCameras_ < 1)
@@ -967,7 +945,14 @@ int NxpNeoCameraData::configure(CameraConfiguration *c)
 				stream == &streamFrame_ ? devFormatFrame : devFormatIr;
 			devFormat.size = cfg.size;
 			devFormat.fourcc = fmt;
-			devFormat.colorSpace = cfg.colorSpace;
+
+			/* Use libcamera sYCC colorspace definition that maps
+			 * to a v4l2 sRGB colorspace equivalent.
+			 */
+			if (cfg.colorSpace == ColorSpace::Srgb)
+				devFormat.colorSpace = ColorSpace::Sycc;
+			else
+				devFormat.colorSpace = cfg.colorSpace;
 		}
 
 		NeoDevice::PipeConfig pipeConfig = {};
@@ -1098,7 +1083,32 @@ void NxpNeoCameraData::stopDevice()
 
 	LOG(NxpNeoPipe, Debug) << "Stop device " << cameraName();
 
-	cancelPendingRequests();
+	/*
+	 * Requests in the pending queue have not been pushed into the pipeline,
+	 * thus cancelled buffers and requests can be completed immediately.
+	 * Conversely, requests in the processing list are in flight in the
+	 * pipeline. Associated buffers are cancelled and completed along with
+	 * their requests. Bundled Frame::info object is deleted so that those
+	 * will be ignored during pipeline termination.
+	 */
+	while (!pendingRequests_.empty()) {
+		Request *request = pendingRequests_.front();
+		request->_d()->cancel();
+		pipe()->completeRequest(request);
+		pendingRequests_.pop();
+	}
+
+	while (!processingRequests_.empty()) {
+		Request *request = processingRequests_.front();
+		NxpNeoFrames::Info *info = frameInfos_.find(request);
+		if (info)
+			frameInfos_.remove(info);
+		else
+			LOG(NxpNeoPipe, Debug) << "Frame info for request not found";
+		request->_d()->cancel();
+		pipe()->completeRequest(request);
+		processingRequests_.pop();
+	}
 
 	ipa_->stop();
 
@@ -1151,7 +1161,8 @@ void NxpNeoCameraData::queuePendingRequests()
 		if (ret) {
 			LOG(NxpNeoPipe, Error)
 				<< "Failed to queue buffers, unbalanced queues";
-			pipe()->cancelRequest(request);
+			request->_d()->cancel();
+			pipe()->completeRequest(request);
 			frameInfos_.remove(info);
 			return;
 		}
@@ -1166,17 +1177,6 @@ void NxpNeoCameraData::queuePendingRequests()
 	}
 
 	return;
-}
-
-void NxpNeoCameraData::cancelPendingRequests()
-{
-	processingRequests_ = {};
-
-	while (!pendingRequests_.empty()) {
-		Request *request = pendingRequests_.front();
-		pipe()->cancelRequest(request);
-		pendingRequests_.pop();
-	}
 }
 
 /**
@@ -1516,6 +1516,7 @@ int NxpNeoCameraData::loadIPA()
 	ipa::nxpneo::SensorConfig sensorConfig;
 	ret = ipa_->init(IPASettings{ ipaTuningFile, sensor->model() },
 			 hwRevision,
+			 sensor->id(),
 			 sensorInfo, sensor->controls(),
 			 &ipaControls_,
 			 &sensorConfig);
@@ -1677,7 +1678,6 @@ int NxpNeoCameraData::freeBuffers()
  *
  * \return 0 in case of success or a negative error code.
  */
-
 int NxpNeoCameraData::setupCameraIsiPipes()
 {
 	ISIDevice *isi = pipe()->isiDevice();
@@ -1865,15 +1865,22 @@ int NxpNeoCameraData::configureFrontEndLinks() const
  * Such buffers shall be detected so that every other buffer bundled to
  * the same frame and associated request can be marked as cancelled and
  * completed.
+ * When the request is completed because of a frame cancellation, the \a info
+ * object associated to the frame is also deleted and should no longer be
+ * accessed by the caller.
+ *
+ * \return True if buffer was cancelled, request completed and \a info entry
+ * deleted.
  */
-bool NxpNeoCameraData::screenCancelledBuffer(FrameBuffer *buffer,
-					     NxpNeoFrames::Info *info)
+bool NxpNeoCameraData::completeCancelledBufferRequest(FrameBuffer *buffer,
+						      NxpNeoFrames::Info *info)
 {
 	Request *request = info->request;
 
 	/* If the buffer is cancelled force a complete of the whole request. */
 	if (buffer->metadata().status == FrameMetadata::FrameCancelled) {
-		pipe()->cancelRequest(request);
+		request->_d()->cancel();
+		completeProcessingRequest(request);
 
 		frameInfos_.remove(info);
 
@@ -1881,6 +1888,27 @@ bool NxpNeoCameraData::screenCancelledBuffer(FrameBuffer *buffer,
 	}
 
 	return false;
+}
+
+/**
+ * \brief Complete an active request in the pipeline
+ * \param[in] request The request to be complete
+ *
+ * Active requests in flight in the pipeline are tracked in the
+ * processingRequest queue where they are processed in order.
+ * When a request completes, either because it has been served by the pipeline,
+ * or because it was aborted, it has to be removed from the processing queue
+ * before reporting it completed to the framework.
+ */
+void NxpNeoCameraData::completeProcessingRequest(Request *request)
+{
+	std::queue<Request *> &queue = processingRequests_;
+	if (queue.empty() || queue.front() != request)
+		LOG(NxpNeoPipe, Warning) << "Processing request not found";
+	else
+		queue.pop();
+
+	pipe()->completeRequest(request);
 }
 
 /**
@@ -1928,7 +1956,7 @@ void NxpNeoCameraData::isiInput0BufferReady(FrameBuffer *buffer)
 	if (!info)
 		return;
 
-	if (screenCancelledBuffer(buffer, info))
+	if (completeCancelledBufferRequest(buffer, info))
 		return;
 
 	Request *request = info->request;
@@ -1968,7 +1996,7 @@ void NxpNeoCameraData::isiInput0BufferReady(FrameBuffer *buffer)
 				       info->input0Buffer->cookie());
 	} else {
 		if (frameInfos_.tryComplete(info))
-			pipe()->completeRequest(request);
+			completeProcessingRequest(request);
 	}
 }
 
@@ -1986,7 +2014,7 @@ void NxpNeoCameraData::isiInput1BufferReady(FrameBuffer *buffer)
 	if (!info)
 		return;
 
-	if (screenCancelledBuffer(buffer, info))
+	if (completeCancelledBufferRequest(buffer, info))
 		return;
 
 	Request *request = info->request;
@@ -2013,7 +2041,7 @@ void NxpNeoCameraData::isiEdBufferReady(FrameBuffer *buffer)
 	if (!info)
 		return;
 
-	if (screenCancelledBuffer(buffer, info))
+	if (completeCancelledBufferRequest(buffer, info))
 		return;
 
 	/*
@@ -2027,7 +2055,6 @@ void NxpNeoCameraData::isiEdBufferReady(FrameBuffer *buffer)
  */
 void NxpNeoCameraData::neoInput0BufferReady([[maybe_unused]] FrameBuffer *buffer)
 {
-	/* Nothing to do - buffer will be recycled when request completes */
 }
 
 /**
@@ -2052,14 +2079,14 @@ void NxpNeoCameraData::neoOutputBufferReady(FrameBuffer *buffer)
 	if (!info)
 		return;
 
-	if (screenCancelledBuffer(buffer, info))
+	if (completeCancelledBufferRequest(buffer, info))
 		return;
 
 	Request *request = info->request;
 	pipe()->completeBuffer(request, buffer);
 
 	if (frameInfos_.tryComplete(info))
-		pipe()->completeRequest(request);
+		completeProcessingRequest(request);
 }
 
 /**
@@ -2074,16 +2101,10 @@ void NxpNeoCameraData::neoParamsBufferReady(FrameBuffer *buffer)
 
 	info->paramDequeued = true;
 
-	/*
-	 * tryComplete() will delete info if it completes the NxpNeoFrame.
-	 * In that event, we must have obtained the Request before hand.
-	 *
-	 * \todo Improve the FrameInfo API to avoid this type of issue
-	 */
 	Request *request = info->request;
 
 	if (frameInfos_.tryComplete(info))
-		pipe()->completeRequest(request);
+		completeProcessingRequest(request);
 }
 
 /**
@@ -2096,7 +2117,7 @@ void NxpNeoCameraData::neoStatsBufferReady(FrameBuffer *buffer)
 	if (!info)
 		return;
 
-	if (screenCancelledBuffer(buffer, info))
+	if (completeCancelledBufferRequest(buffer, info))
 		return;
 
 	ipa_->processStatsBuffer(info->id, info->statsBuffer->cookie(),
@@ -2128,7 +2149,6 @@ void NxpNeoCameraData::frameStart(uint32_t sequence)
 	 * \todo Synchronize with the sequence number
 	 */
 	Request *request = processingRequests_.front();
-	processingRequests_.pop();
 
 	const auto &testPatternMode = request->controls().get(controls::draft::TestPatternMode);
 	if (!testPatternMode)
@@ -2185,7 +2205,7 @@ void NxpNeoCameraData::ipaMetadataReady(unsigned int id, const ControlList &meta
 
 	info->metadataProcessed = true;
 	if (frameInfos_.tryComplete(info))
-		pipe()->completeRequest(request);
+		completeProcessingRequest(request);
 }
 
 void NxpNeoCameraData::ipaSetSensorControls([[maybe_unused]] unsigned int id,
