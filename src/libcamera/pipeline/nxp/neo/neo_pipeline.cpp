@@ -77,7 +77,7 @@ public:
 	int start(const ControlList *controls);
 	void stopDevice();
 
-	void queuePendingRequests();
+	int queuePendingRequests();
 
 	int init();
 	PipelineHandlerNxpNeo *pipe();
@@ -633,9 +633,7 @@ int PipelineHandlerNxpNeo::queueRequestDevice(Camera *camera, Request *request)
 	NxpNeoCameraData *data = cameraData(camera);
 
 	data->pendingRequests_.push(request);
-	data->queuePendingRequests();
-
-	return 0;
+	return data->queuePendingRequests();
 }
 
 bool PipelineHandlerNxpNeo::match(DeviceEnumerator *enumerator)
@@ -1126,7 +1124,7 @@ void NxpNeoCameraData::stopDevice()
 	freeBuffers();
 }
 
-void NxpNeoCameraData::queuePendingRequests()
+int NxpNeoCameraData::queuePendingRequests()
 {
 	FrameBuffer *reqRawBuffer;
 	NxpNeoFrames::Info *info;
@@ -1161,10 +1159,9 @@ void NxpNeoCameraData::queuePendingRequests()
 		if (ret) {
 			LOG(NxpNeoPipe, Error)
 				<< "Failed to queue buffers, unbalanced queues";
-			request->_d()->cancel();
-			pipe()->completeRequest(request);
 			frameInfos_.remove(info);
-			return;
+			pendingRequests_.pop();
+			return ret;
 		}
 
 		info->paramsBuffer->_d()->setRequest(request);
@@ -1176,7 +1173,7 @@ void NxpNeoCameraData::queuePendingRequests()
 		processingRequests_.push(request);
 	}
 
-	return;
+	return 0;
 }
 
 /**
