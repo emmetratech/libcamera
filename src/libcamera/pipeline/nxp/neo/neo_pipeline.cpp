@@ -721,11 +721,10 @@ int PipelineHandlerNxpNeo::createCamera(MediaEntity *sensorEntity,
 {
 	int ret;
 
-	std::unique_ptr<CameraSensor> sensor;
-	sensor = std::make_unique<CameraSensor>(sensorEntity);
-	ret = sensor->init();
-	if (ret)
-		return ret;
+	std::unique_ptr<CameraSensor> sensor =
+		CameraSensorFactoryBase::create(sensorEntity);
+	if (!sensor)
+		return -ENODEV;
 
 	std::string name = sensorEntity->name();
 	const CameraInfo *cameraInfo = pipelineConfig_.getCameraInfo(name);
@@ -734,8 +733,7 @@ int PipelineHandlerNxpNeo::createCamera(MediaEntity *sensorEntity,
 		return -EINVAL;
 	}
 
-	std::unique_ptr<NeoDevice> neo;
-	neo = std::make_unique<NeoDevice>(neoInstance);
+	std::unique_ptr<NeoDevice> neo = std::make_unique<NeoDevice>(neoInstance);
 	ret = neo->init(neoMedia);
 	if (ret)
 		return ret;

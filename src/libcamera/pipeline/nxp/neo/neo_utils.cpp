@@ -190,13 +190,15 @@ int PipelineConfig::loadAutoDetect(MediaDevice *media, ISIDevice *isiDevice)
 		unsigned int pipeIndex;
 		LOG(NxpNeoPipe, Debug) << "Auto detect camera " << entity->name();
 
-		CameraSensor sensor(entity);
-		if (sensor.init()) {
+		std::unique_ptr<CameraSensor> sensor =
+			CameraSensorFactoryBase::create(entity);
+		if (!sensor) {
 			LOG(NxpNeoPipe, Warning)
-				<< "Could not construct camera " << entity->name();
+				<< "Could not construct camera sensor "
+				<< entity->name();
 			continue;
 		}
-		Size size = sensor.resolution();
+		Size size = sensor->resolution();
 		ret = isiDevice->reservePipeBySize(size, &pipeIndex);
 		if (ret) {
 			LOG(NxpNeoPipe, Warning) << "Could not allocate pipe";
