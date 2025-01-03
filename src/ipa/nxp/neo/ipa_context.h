@@ -19,8 +19,9 @@
 
 #include <libcamera/ipa/core_ipa_interface.h>
 
+#include "libcamera/internal/matrix.h"
+
 #include <libipa/fc_queue.h>
-#include <libipa/matrix.h>
 
 namespace libcamera {
 
