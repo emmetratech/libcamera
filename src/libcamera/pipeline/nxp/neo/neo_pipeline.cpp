@@ -1524,6 +1524,10 @@ int NxpNeoCameraData::loadIPA()
 	sensorIsRgbIr_ = sensorConfig.rgbIr;
 	embeddedTopLines_ = sensorConfig.embeddedTopLines;
 
+	/*
+	 * Delayed controls definition from the IPA init() has priority over the
+	 * definition from the global sensor properties.
+	 */
 	std::map<int32_t, ipa::nxpneo::DelayedControlsParams> &ipaDelayParams =
 		sensorConfig.delayedControlsParams;
 	std::unordered_map<uint32_t, DelayedControls::ControlParams>
@@ -1534,10 +1538,15 @@ int NxpNeoCameraData::loadIPA()
 		DelayedControls::ControlParams params = { v.delay, v.priorityWrite };
 		delayedControlsParams.emplace(k, params);
 	}
+	if (!delayedControlsParams.size()) {
+		const CameraSensorProperties::SensorDelays &delays =
+			sensor->sensorDelays();
+		delayedControlsParams = {
+			{ V4L2_CID_ANALOGUE_GAIN, { delays.gainDelay, false } },
+			{ V4L2_CID_EXPOSURE, { delays.exposureDelay, false } },
+		};
+	}
 
-	/*
-	 * DelayedControls parameters come from prior IPA init().
-	 */
 	delayedCtrls_ =
 		std::make_unique<DelayedControls>(sensor->device(),
 						  delayedControlsParams);
