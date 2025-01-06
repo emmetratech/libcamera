@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
  * neo-utils.cpp - Helpers for NXP NEO pipeline
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  */
 
 #include "neo_utils.h"
@@ -69,8 +69,8 @@ std::string CameraMediaStream::toString() const
 
 /**
  * \brief Return if a stream exists for the camera
- * \param[in] streamId The stream identifier STREAM_<XYZ>.
- * \return True if the stream is configured.
+ * \param[in] streamId The stream identifier STREAM_<XYZ>
+ * \return True if the stream is configured
  */
 bool CameraInfo::hasStream(unsigned int streamId) const
 {
@@ -650,7 +650,7 @@ int PipelineConfig::parseRoutings(const YamlObject &platform, MediaDevice *media
 
 		routingMap_[entity] = routing;
 		LOG(NxpNeoPipe, Debug) << "Entity name " << entityName
-				   << " routing " << routing;
+				       << " routing " << routing;
 	}
 
 	return 0;

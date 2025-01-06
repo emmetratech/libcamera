@@ -9,7 +9,7 @@
  * Copyright (C) 2022 - Jacopo Mondi <jacopo@jmondi.org>
  *
  * neo_pipeline.cpp - Pipeline handler for NXP NEO ISP
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  */
 
 #include <algorithm>
@@ -690,7 +690,7 @@ bool PipelineHandlerNxpNeo::match(DeviceEnumerator *enumerator)
 		ret = createCamera(entity, neoDevice, numCameras_);
 		if (ret)
 			LOG(NxpNeoPipe, Warning) << "Failed to probe camera "
-					     << entity->name() << ": " << ret;
+						 << entity->name() << ": " << ret;
 		else
 			numCameras_++;
 	}
@@ -713,7 +713,7 @@ bool PipelineHandlerNxpNeo::match(DeviceEnumerator *enumerator)
 
 /**
  * \brief Probe, configure and register camera sensor
- * \return 0 on success or a negative error code otherwise.
+ * \return 0 on success or a negative error code otherwise
  */
 int PipelineHandlerNxpNeo::createCamera(MediaEntity *sensorEntity,
 					MediaDevice *neoMedia,
@@ -772,7 +772,7 @@ int PipelineHandlerNxpNeo::createCamera(MediaEntity *sensorEntity,
  * shared by the streams from multiple cameras, routing has to be setup
  * once at startup and no longer updated afterwards.
  *
- * \return 0 on success, or a negative error code otherwise.
+ * \return 0 on success, or a negative error code otherwise
  */
 int PipelineHandlerNxpNeo::setupRouting() const
 {
@@ -830,7 +830,7 @@ int PipelineHandlerNxpNeo::setupRouting() const
  * there is one device instance per camera, so there is no issue of sharing
  * streams on common entity pad.
  *
- * \return 0 on success or a negative error code otherwise.
+ * \return 0 on success or a negative error code otherwise
  */
 int PipelineHandlerNxpNeo::setupCameraGraphs()
 {
@@ -874,7 +874,7 @@ int PipelineHandlerNxpNeo::setupCameraGraphs()
 
 /**
  * \brief Load the pipeline configuration file
- * \return 0 on success, or a negative error code otherwise.
+ * \return 0 on success, or a negative error code otherwise
  */
 int PipelineHandlerNxpNeo::loadPipelineConfig()
 {
@@ -989,7 +989,7 @@ int NxpNeoCameraData::configure(CameraConfiguration *c)
 	ret = ipa_->configure(configInfo, streamConfig, &ipaControls_);
 	if (ret) {
 		LOG(NxpNeoPipe, Error) << "Failed to configure IPA: "
-				   << strerror(-ret);
+				       << strerror(-ret);
 		return ret;
 	}
 
@@ -1176,7 +1176,7 @@ int NxpNeoCameraData::queuePendingRequests()
 
 /**
  * \brief Initialize sensor, frontend, IPA and callbacks
- * \return 0 on success or a negative error code otherwise.
+ * \return 0 on success or a negative error code otherwise
  */
 int NxpNeoCameraData::init()
 {
@@ -1204,8 +1204,8 @@ int NxpNeoCameraData::init()
 	const auto &rotation = properties_.get(properties::Rotation);
 	if (!rotation)
 		LOG(NxpNeoPipe, Warning) << "Rotation control not exposed by "
-				     << cameraName()
-				     << ". Assume rotation 0";
+					 << cameraName()
+					 << ". Assume rotation 0";
 
 	/*
 	 * Connect video devices' 'bufferReady' signals to their
@@ -1278,7 +1278,7 @@ void NxpNeoCameraData::adjustTopLinesSize(Size *size) const
  * frontend (ISI) and ISP format capabilities.
  * If several formats are possible, report a format with the largest bit depth.
  *
- * \return The corresponding media bus format, or zero if none is found.
+ * \return The corresponding media bus format, or zero if none is found
  */
 unsigned int NxpNeoCameraData::getRawMediaBusFormat(PixelFormat *pixelFormat) const
 {
@@ -1342,7 +1342,7 @@ unsigned int NxpNeoCameraData::getRawMediaBusFormat(PixelFormat *pixelFormat) co
  * \param[out] vdFormatEd The embedded data front end's capture video device
  * format
  *
- * \return 0 in case of success or a negative error code.
+ * \return 0 in case of success or a negative error code
  */
 int NxpNeoCameraData::configureFrontEndFormat(const V4L2SubdeviceFormat &sensorFormat,
 					      Transform transform)
@@ -1433,7 +1433,7 @@ int NxpNeoCameraData::configureFrontEndFormat(const V4L2SubdeviceFormat &sensorF
  * This function needs data->ipaControls_ to be initialized by the IPA init()
  * function at camera creation time. Always call this function after IPA init().
  *
- * \return 0 on success or a negative error code otherwise.
+ * \return 0 on success or a negative error code otherwise
  */
 int NxpNeoCameraData::initControls()
 {
@@ -1467,7 +1467,7 @@ int NxpNeoCameraData::initControls()
  * Always call this function after IPA configure() to make sure to have a
  * properly refreshed IPA controls list.
  *
- * \return 0 on success or a negative error code otherwise.
+ * \return 0 on success or a negative error code otherwise
  */
 int NxpNeoCameraData::updateControls()
 {
@@ -1563,7 +1563,7 @@ int NxpNeoCameraData::loadIPA()
  * Lastly, the NxpNeoFrames object is initialized with respective internal
  * buffer lists in order to serve the incoming Request.
  *
- * \return 0 in case of success or a negative error code.
+ * \return 0 in case of success or a negative error code
  */
 int NxpNeoCameraData::allocateBuffers()
 {
@@ -1625,14 +1625,10 @@ int NxpNeoCameraData::allocateBuffers()
 		pipeInput0->buffers();
 
 	const std::vector<std::unique_ptr<FrameBuffer>> &input1Buffers =
-		cameraInfo_->hasStreamInput1() ?
-		pipeInput1->buffers() :
-		emptyBufferVector;
+		cameraInfo_->hasStreamInput1() ? pipeInput1->buffers() : emptyBufferVector;
 
 	const std::vector<std::unique_ptr<FrameBuffer>> &embeddedBuffers =
-		cameraInfo_->hasStreamEmbedded() ?
-		pipeEmbedded->buffers() :
-		emptyBufferVector;
+		cameraInfo_->hasStreamEmbedded() ? pipeEmbedded->buffers() : emptyBufferVector;
 
 	frameInfos_.init(input0Buffers, input1Buffers,
 			 embeddedBuffers,
@@ -1646,7 +1642,7 @@ int NxpNeoCameraData::allocateBuffers()
 
 /**
  * \brief Deallocate buffers from ISI and ISP
- * \return 0 in case of success or a negative error code.
+ * \return 0 in case of success or a negative error code
  */
 int NxpNeoCameraData::freeBuffers()
 {
@@ -1680,7 +1676,7 @@ int NxpNeoCameraData::freeBuffers()
 /**
  * \brief Acquire ISI pipes that have been reserved at enumeration time
  *
- * \return 0 in case of success or a negative error code.
+ * \return 0 in case of success or a negative error code
  */
 int NxpNeoCameraData::setupCameraIsiPipes()
 {
@@ -1723,13 +1719,13 @@ int NxpNeoCameraData::setupCameraIsiPipes()
 
 /**
  * \brief Configure the graph format for a stream of the camera
- * \param[in] streamLinks Vector of media links and streams.
- * \param[in] sdFormat The subdevice format used for the stream.
+ * \param[in] streamLinks Vector of media links and streams
+ * \param[in] sdFormat The subdevice format used for the stream
  *
  * The pad/stream involved in the camera stream graph are configured with the
  * specified format.
  *
- * \return 0 in case of success or a negative error code.
+ * \return 0 in case of success or a negative error code
  */
 int NxpNeoCameraData::configureFrontEndStream(
 	const std::vector<CameraMediaStream::StreamLink> &streamLinks,
@@ -1799,7 +1795,7 @@ int NxpNeoCameraData::configureFrontEndStream(
 
 /**
  * \brief Enable media links from the camera graph
- * \return 0 in case of success or a negative error code.
+ * \return 0 in case of success or a negative error code
  */
 int NxpNeoCameraData::configureFrontEndLinks() const
 {
@@ -1922,7 +1918,7 @@ void NxpNeoCameraData::completeProcessingRequest(Request *request)
  * \param[in] id The start value for the unique identifier of the IPA shared
  * buffer
  *
- * \return 0 in case of success or a negative error code.
+ * \return 0 in case of success or a negative error code
  */
 int NxpNeoCameraData::prepareISIPipeBuffers(ISIPipe *pipe,
 					    unsigned int bufferCount,
