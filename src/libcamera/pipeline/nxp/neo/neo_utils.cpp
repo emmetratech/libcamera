@@ -84,6 +84,31 @@ bool CameraInfo::hasStream(unsigned int streamId) const
  */
 
 /**
+ * \brief Load the pipeline configuration
+ * \param[in] file The path to the pipeline configuration file
+ * \param[in] media The frontend media controller device
+ * \param[in] isiDevice The ISI Device associated to the media controller device
+ *
+ * Build the pipeline configuration from either the config file
+ * if it exists and lists a setup corresponding to the frontend media controller
+ * device. In case no such predefined is available, default to automatic
+ * detection mode that works for pipelines that can be automatically discovered.
+ *
+ * \return 0 on success or a negative error code otherwise
+ */
+int PipelineConfig::load(std::string filename, MediaDevice *media,
+			 ISIDevice *isiDevice)
+{
+	int ret;
+
+	ret = loadFromFile(filename, media, isiDevice);
+	if (ret)
+		ret = loadAutoDetect(media, isiDevice);
+
+	return ret;
+}
+
+/**
  * \brief Report the CameraInfo associated to a camera
  * \param[in] name The name of the camera media device entity
  *
@@ -981,31 +1006,6 @@ int PipelineConfig::loadFromFile(std::string filename, MediaDevice *media,
 	}
 
 	return -EINVAL;
-}
-
-/**
- * \brief Load the pipeline configuration
- * \param[in] file The path to the pipeline configuration file
- * \param[in] media The frontend media controller device
- * \param[in] isiDevice The ISI Device associated to the media controller device
- *
- * Build the pipeline configuration from either the config file
- * if it exists and lists a setup corresponding to the frontend media controller
- * device. In case no such predefined is available, default to automatic
- * detection mode that works for pipelines that can be automatically discovered.
- *
- * \return 0 on success or a negative error code otherwise
- */
-int PipelineConfig::load(std::string filename, MediaDevice *media,
-			 ISIDevice *isiDevice)
-{
-	int ret;
-
-	ret = loadFromFile(filename, media, isiDevice);
-	if (ret)
-		ret = loadAutoDetect(media, isiDevice);
-
-	return ret;
 }
 
 } // namespace nxpneo

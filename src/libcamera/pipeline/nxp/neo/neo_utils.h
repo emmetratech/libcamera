@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
  * neo_utils.h - Helpers for NXP NEO pipeline
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  */
 
 #pragma once
@@ -110,8 +110,6 @@ private:
 	static constexpr unsigned int kPadAny =
 		std::numeric_limits<unsigned int>::max();
 
-	int loadFromFile(std::string file, MediaDevice *media, ISIDevice *isiDevice);
-
 	int loadAutoDetect(MediaDevice *media, ISIDevice *isiDevice);
 	int loadAutoDetectCameraStream(MediaDevice *media,
 				       ISIDevice *isiDevice, unsigned int pipe,
@@ -130,16 +128,17 @@ private:
 				   V4L2Subdevice::Stream *sourceStream,
 				   std::map<MediaEntity *, V4L2Subdevice::Routing> *routingMap);
 
-	int parsePlatform(const YamlObject &platform, MediaDevice *media,
-			  ISIDevice *isiDevice);
 	int parseMatch(const YamlObject &match, MediaDevice *media);
 	int parseRoutings(const YamlObject &platform, MediaDevice *media);
-	int parseCameras(const YamlObject &platform, MediaDevice *media,
-			 ISIDevice *isiDevice);
-	int parseReserveIsi(ISIDevice *isiDevice);
 	std::optional<CameraMediaStream>
 	parseMediaStream(const YamlObject &camera, std::string key,
 			 MediaDevice *media);
+	int parseCameras(const YamlObject &platform, MediaDevice *media,
+			 ISIDevice *isiDevice);
+	int parseReserveIsi(ISIDevice *isiDevice);
+	int parsePlatform(const YamlObject &platform, MediaDevice *media,
+			  ISIDevice *isiDevice);
+	int loadFromFile(std::string file, MediaDevice *media, ISIDevice *isiDevice);
 
 	RoutingMap routingMap_;
 	CameraMap cameraMap_;
