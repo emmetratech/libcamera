@@ -42,7 +42,6 @@ private:
 private:
 	void generateBlocks(const neoisp_meta_stats_s *stats);
 	void awbGreyWorld(IPAActiveState &activeState, IPAFrameContext &frameContext);
-	uint32_t estimateCCT(double red, double green, double blue);
 	static constexpr uint16_t gainDouble2Param(double gain);
 
 	std::vector<RGB<double>> blocks_;
