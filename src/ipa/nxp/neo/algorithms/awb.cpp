@@ -5,7 +5,7 @@
  * Copyright (C) 2021, Ideas On Board
  *
  * awb.cpp - AWB control algorithm
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  */
 
 #include "awb.h"
@@ -216,7 +216,6 @@ void Awb::generateBlocks(const neoisp_meta_stats_s *stats)
 	blocks_.clear();
 
 	for (unsigned int i = 0; i < NEO_CTEMP_BLOCK_NB_X * NEO_CTEMP_BLOCK_NB_Y; i++) {
-		RGB block;
 		/*
 		 * A 2x2 area of RGGB pixels is processed at once
 		 * and the counter is incremented for the whole 2x2 block by one.
@@ -235,9 +234,10 @@ void Awb::generateBlocks(const neoisp_meta_stats_s *stats)
 		       << (ctemp.ctemp_g_sum[i] & 0xF);
 		sumB = static_cast<unsigned long>(ctemp.ctemp_b_sum[i] >> 4)
 		       << (ctemp.ctemp_b_sum[i] & 0xF);
-		block.R = sumR / counted;
-		block.G = sumG / counted;
-		block.B = sumB / counted;
+		RGB<double> block{ { static_cast<double>(sumR),
+				     static_cast<double>(sumG),
+				     static_cast<double>(sumB) } };
+		block /= counted;
 		blocks_.push_back(block);
 	}
 }
@@ -249,22 +249,22 @@ void Awb::awbGreyWorld(IPAActiveState &activeState, IPAFrameContext &frameContex
 	 * Make a separate list of the derivatives for each of red and blue, so
 	 * that we can sort them to exclude the extreme gains.
 	 */
-	std::vector<RGB> &redDerivative(blocks_);
-	std::vector<RGB> blueDerivative(redDerivative);
+	std::vector<RGB<double>> &redDerivative(blocks_);
+	std::vector<RGB<double>> blueDerivative(redDerivative);
 	std::sort(redDerivative.begin(), redDerivative.end(),
-		  [](RGB const &a, RGB const &b) {
-			  return a.G * b.R < b.G * a.R;
+		  [](RGB<double> const &a, RGB<double> const &b) {
+			  return a.g() * b.r() < b.g() * a.r();
 		  });
 	std::sort(blueDerivative.begin(), blueDerivative.end(),
-		  [](RGB const &a, RGB const &b) {
-			  return a.G * b.B < b.G * a.B;
+		  [](RGB<double> const &a, RGB<double> const &b) {
+			  return a.g() * b.b() < b.g() * a.b();
 		  });
 
 	/* Average the middle half of the values. */
 	int discard = redDerivative.size() / 4;
 
-	RGB sumRed(0, 0, 0);
-	RGB sumBlue(0, 0, 0);
+	RGB<double> sumRed{ 0.0 };
+	RGB<double> sumBlue{ 0.0 };
 	for (auto ri = redDerivative.begin() + discard,
 		  bi = blueDerivative.begin() + discard;
 	     ri != redDerivative.end() - discard; ri++, bi++)
@@ -275,19 +275,19 @@ void Awb::awbGreyWorld(IPAActiveState &activeState, IPAFrameContext &frameContex
 	 * divide by the gains that were used to get the raw means from the
 	 * sensor.
 	 */
-	sumRed.G /= frameContext.awb.gains.green;
-	sumRed.R /= frameContext.awb.gains.red;
-	sumBlue.G /= frameContext.awb.gains.green;
-	sumBlue.B /= frameContext.awb.gains.blue;
+	sumRed.g() /= frameContext.awb.gains.green;
+	sumRed.r() /= frameContext.awb.gains.red;
+	sumBlue.g() /= frameContext.awb.gains.green;
+	sumBlue.b() /= frameContext.awb.gains.blue;
 
-	double redGain = sumRed.G / (sumRed.R + 1),
-	       blueGain = sumBlue.G / (sumBlue.B + 1);
+	double redGain = sumRed.g() / (sumRed.r() + 1),
+	       blueGain = sumBlue.g() / (sumBlue.b() + 1);
 
 	/*
 	 * Color temperature is not relevant in Grey world but
 	 * still useful to estimate it :-)
 	 */
-	activeState.awb.temperatureK = estimateCCT(sumRed.R, sumRed.G, sumBlue.B);
+	activeState.awb.temperatureK = estimateCCT(sumRed.r(), sumRed.g(), sumBlue.b());
 
 	/*
 	 * Clamp the gain values to the hardware, which expresses gains as Q8.8
