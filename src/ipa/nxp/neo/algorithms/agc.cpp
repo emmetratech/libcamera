@@ -9,7 +9,7 @@
  * Copyright (C) 2021, Ideas On Board
  *
  * agc.cpp - AGC/AEC mean-based control algorithm
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  */
 
 #include "agc.h"
@@ -331,9 +331,9 @@ double Agc::estimateLuminance(double gain) const
 	 * Apply the AWB gains to approximate colours correctly, use the Rec.
 	 * 601 formula to calculate the relative luminance, and normalize it.
 	 */
-	double ySum = redMean * rGain_ * 0.299 +
-		      greenMean * gGain_ * 0.587 +
-		      blueMean * bGain_ * 0.114;
+	double ySum = redMean * gains_.r() * 0.299 +
+		      greenMean * gains_.g() * 0.587 +
+		      blueMean * gains_.b() * 0.114;
 
 	return ySum / (NEO_HIST_BIN_SIZE - 1);
 }
@@ -392,9 +392,7 @@ void Agc::process(IPAContext &context, [[maybe_unused]] const uint32_t frame,
 	}
 
 	Histogram hist = parseStatistics(stats);
-	rGain_ = context.activeState.awb.gains.automatic.red;
-	gGain_ = context.activeState.awb.gains.automatic.green;
-	bGain_ = context.activeState.awb.gains.automatic.blue;
+	gains_ = context.activeState.awb.gains.automatic;
 
 	/*
 	 * The Agc algorithm needs to know the effective exposure value that was

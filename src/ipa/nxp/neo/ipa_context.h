@@ -5,7 +5,7 @@
  * Copyright (C) 2021-2022, Ideas On Board
  *
  * ipa_context.h - NXP NEO IPA Context
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  */
 
 #pragma once
@@ -22,6 +22,7 @@
 #include "libcamera/internal/matrix.h"
 
 #include <libipa/fc_queue.h>
+#include <libipa/vector.h>
 
 namespace libcamera {
 
@@ -78,16 +79,8 @@ struct IPAActiveState {
 
 	struct {
 		struct {
-			struct {
-				double red;
-				double green;
-				double blue;
-			} manual;
-			struct {
-				double red;
-				double green;
-				double blue;
-			} automatic;
+			RGB<double> manual;
+			RGB<double> automatic;
 		} gains;
 
 		unsigned int temperatureK;
@@ -107,12 +100,7 @@ struct IPAFrameContext : public FrameContext {
 	} agc;
 
 	struct {
-		struct {
-			double red;
-			double green;
-			double blue;
-		} gains;
-
+		RGB<double> gains;
 		unsigned int temperatureK;
 		bool autoEnabled;
 	} awb;
