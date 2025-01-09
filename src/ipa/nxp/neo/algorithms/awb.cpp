@@ -269,9 +269,11 @@ void Awb::awbGreyWorld(IPAActiveState &activeState, IPAFrameContext &frameContex
 
 	/*
 	 * Clamp the gain values to the hardware, which expresses gains as Q8.8
-	 * unsigned integer values.
+	 * unsigned integer values. Set the minimum just above zero to avoid
+	 * divisions by zero when computing the raw means in subsequent
+	 * iterations.
 	 */
-	gains = gains.max(0.0).min(65535.0 / 256);
+	gains = gains.max(1.0 / 256).min(65535.0 / 256);
 
 	activeState.awb.gains.automatic = gains;
 }
