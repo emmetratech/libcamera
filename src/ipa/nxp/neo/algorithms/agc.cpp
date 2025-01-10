@@ -157,8 +157,8 @@ int Agc::configure(IPAContext &context, const IPACameraSensorInfo &configInfo)
 	context.activeState.agc.exposureMode = exposureModeHelpers().begin()->first;
 
 	/* \todo Run this again when FrameDurationLimits is passed in */
-	setLimits(context.configuration.sensor.minShutterSpeed,
-		  context.configuration.sensor.maxShutterSpeed,
+	setLimits(context.configuration.sensor.minExposureTime,
+		  context.configuration.sensor.maxExposureTime,
 		  context.configuration.sensor.minAnalogueGain,
 		  context.configuration.sensor.maxAnalogueGain);
 	resetFrameCount();
@@ -398,20 +398,20 @@ void Agc::process(IPAContext &context, [[maybe_unused]] const uint32_t frame,
 		<< "Sensor[Exposure, Gain]= "
 		<< exposureTime << ", " << analogueGain << " - frame=" << frame;
 
-	utils::Duration shutterTime;
+	utils::Duration newExposureTime;
 	double aGain, dGain;
-	std::tie(shutterTime, aGain, dGain) =
+	std::tie(newExposureTime, aGain, dGain) =
 		calculateNewEv(context.activeState.agc.constraintMode,
 			       context.activeState.agc.exposureMode, hist,
 			       effectiveExposureValue);
 
 	LOG(NxpNeoAlgoAgc, Debug)
-		<< "Divided up shutter, analogue gain and digital gain are "
-		<< shutterTime << ", " << aGain << " and " << dGain;
+		<< "Divided up exposure time, analogue gain and digital gain are "
+		<< newExposureTime << ", " << aGain << " and " << dGain;
 
 	IPAActiveState &activeState = context.activeState;
 	/* Update the estimated exposure and gain. */
-	activeState.agc.automatic.exposure = shutterTime / context.configuration.sensor.lineDuration;
+	activeState.agc.automatic.exposure = newExposureTime / context.configuration.sensor.lineDuration;
 	activeState.agc.automatic.gain = aGain;
 
 	/*

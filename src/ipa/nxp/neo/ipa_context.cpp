@@ -70,11 +70,11 @@ namespace libcamera::ipa::nxpneo {
  * \var IPASessionConfiguration::sensor
  * \brief Sensor-specific configuration of the IPA
  *
- * \var IPASessionConfiguration::sensor.minShutterSpeed
- * \brief Minimum shutter speed supported with the sensor
+ * \var IPASessionConfiguration::sensor.minExposureTime
+ * \brief Minimum exposure time supported with the sensor
  *
- * \var IPASessionConfiguration::sensor.maxShutterSpeed
- * \brief Maximum shutter speed supported with the sensor
+ * \var IPASessionConfiguration::sensor.maxExposureTime
+ * \brief Maximum exposure time supported with the sensor
  *
  * \var IPASessionConfiguration::sensor.minAnalogueGain
  * \brief Minimum analogue gain supported with the sensor
