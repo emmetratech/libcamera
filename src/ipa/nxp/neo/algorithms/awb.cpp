@@ -33,19 +33,17 @@ namespace ipa::nxpneo::algorithms {
 /**
  * \class Awb
  * \brief A Grey world white balance correction algorithm
- */
-
-LOG_DEFINE_CATEGORY(NxpNeoAlgoAwb)
-
-/**
- * \class Awb
- * \brief A Grey world white balance correction algorithm
  *
  * The Grey World algorithm assumes that the scene, in average, is neutral grey.
  * Reference: Lam, Edmund & Fung, George. (2008). Automatic White Balancing in
  * Digital Photography. 10.1201/9781420054538.ch10.
  *
+ * This algorithm is using the OBWB2 (merge path) unit to program the WB gains.
+ * Note that the gains for the OBWB0/1 are set by the ISP driver to adjust
+ * the required pixel depth for the input0 and input1 paths of the ISP.
  */
+
+LOG_DEFINE_CATEGORY(NxpNeoAlgoAwb)
 
 Awb::Awb()
 {
@@ -136,7 +134,6 @@ void Awb::prepare(IPAContext &context, const uint32_t frame,
 
 	/* Configure OB_WB */
 	/* size of pixel components: set to default value */
-	/* \todo: check if WB gain should also applied on line path 0 and 1 */
 	params->regs.obwb[NEO_OBWB_MERGE_PATH].ctrl_obpp = NEO_OBWB_OBPP_20BPP;
 
 	/* Update the WB gains. */
