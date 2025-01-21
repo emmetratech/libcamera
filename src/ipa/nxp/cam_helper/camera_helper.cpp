@@ -39,6 +39,9 @@ namespace nxp {
 
 namespace md {
 
+constexpr char const *kVendor = "nxp";
+constexpr ControlId::Direction kDirection = ControlId::Direction::Out;
+
 /*
  * Embedded data controls definition
  * Controls represent the embedded data values that are parsed and reported in a
@@ -51,7 +54,8 @@ namespace md {
  *
  * Values correspond to Long and optionally Short and Very Short captures.
  */
-const Control<Span<const float>> AnalogueGain(ANALOGUE_GAIN, "AnalogueGain");
+const Control<Span<const float>>
+	AnalogueGain(ANALOGUE_GAIN, "AnalogueGain", kVendor, kDirection);
 
 /**
  * \var DigitalGain
@@ -59,7 +63,8 @@ const Control<Span<const float>> AnalogueGain(ANALOGUE_GAIN, "AnalogueGain");
  *
  * Values correspond to Long and optionally Short and Very Short captures.
  */
-const Control<Span<const float>> DigitalGain(DIGITAL_GAIN, "DigitalGain");
+const Control<Span<const float>>
+	DigitalGain(DIGITAL_GAIN, "DigitalGain", kVendor, kDirection);
 
 /**
  * \var Exposure
@@ -67,7 +72,8 @@ const Control<Span<const float>> DigitalGain(DIGITAL_GAIN, "DigitalGain");
  *
  * Values correspond to Long and optionally Short and Very Short captures.
  */
-const Control<Span<const float>> Exposure(EXPOSURE, "Exposure");
+const Control<Span<const float>>
+	Exposure(EXPOSURE, "Exposure", kVendor, kDirection);
 
 /**
  * \var WhiteBalanceGain
@@ -76,14 +82,16 @@ const Control<Span<const float>> Exposure(EXPOSURE, "Exposure");
  * Values correspond to Red, GreenR, GreenB and Blue color channels for Long
  * and optionally Short and Very Short captures.
  */
-const Control<Span<const float>> WhiteBalanceGain(WB_GAIN, "WhiteBalanceGain");
+const Control<Span<const float>>
+	WhiteBalanceGain(WB_GAIN, "WhiteBalanceGain", kVendor, kDirection);
 
 /**
  * \var Temperature
  * \brief Sensor temperature
  * Temperature format is real degrees Celsius.
  */
-const Control<const float> Temperature(TEMPERATURE, "Temperature");
+const Control<const float>
+	Temperature(TEMPERATURE, "Temperature", kVendor, kDirection);
 
 const ControlIdMap controlIdMap{
 	{ ANALOGUE_GAIN, &AnalogueGain },

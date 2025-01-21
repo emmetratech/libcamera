@@ -158,11 +158,10 @@ PipelineHandlerISI *ISICameraData::pipe()
 /* Open and initialize pipe components. */
 int ISICameraData::init()
 {
-	int ret = sensor_->init();
-	if (ret)
-		return ret;
+	if (!sensor_)
+		return -ENODEV;
 
-	ret = csis_->open();
+	int ret = csis_->open();
 	if (ret)
 		return ret;
 
@@ -1128,7 +1127,7 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 		std::unique_ptr<ISICameraData> data =
 			std::make_unique<ISICameraData>(this, pipes_.size());
 
-		data->sensor_ = std::make_unique<CameraSensor>(sensor);
+		data->sensor_ = CameraSensorFactoryBase::create(sensor);
 		data->csis_ = std::make_unique<V4L2Subdevice>(csi);
 		data->xbarSink_ = sink;
 

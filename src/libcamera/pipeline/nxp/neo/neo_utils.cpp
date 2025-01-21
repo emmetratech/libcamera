@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
  * neo-utils.cpp - Helpers for NXP NEO pipeline
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  */
 
 #include "neo_utils.h"
@@ -69,8 +69,8 @@ std::string CameraMediaStream::toString() const
 
 /**
  * \brief Return if a stream exists for the camera
- * \param[in] streamId The stream identifier STREAM_<XYZ>.
- * \return True if the stream is configured.
+ * \param[in] streamId The stream identifier STREAM_<XYZ>
+ * \return True if the stream is configured
  */
 bool CameraInfo::hasStream(unsigned int streamId) const
 {
@@ -82,6 +82,31 @@ bool CameraInfo::hasStream(unsigned int streamId) const
 /* -----------------------------------------------------------------------------
  * PipelineConfig class
  */
+
+/**
+ * \brief Load the pipeline configuration
+ * \param[in] file The path to the pipeline configuration file
+ * \param[in] media The frontend media controller device
+ * \param[in] isiDevice The ISI Device associated to the media controller device
+ *
+ * Build the pipeline configuration from either the config file
+ * if it exists and lists a setup corresponding to the frontend media controller
+ * device. In case no such predefined is available, default to automatic
+ * detection mode that works for pipelines that can be automatically discovered.
+ *
+ * \return 0 on success or a negative error code otherwise
+ */
+int PipelineConfig::load(std::string filename, MediaDevice *media,
+			 ISIDevice *isiDevice)
+{
+	int ret;
+
+	ret = loadFromFile(filename, media, isiDevice);
+	if (ret)
+		ret = loadAutoDetect(media, isiDevice);
+
+	return ret;
+}
 
 /**
  * \brief Report the CameraInfo associated to a camera
@@ -190,13 +215,15 @@ int PipelineConfig::loadAutoDetect(MediaDevice *media, ISIDevice *isiDevice)
 		unsigned int pipeIndex;
 		LOG(NxpNeoPipe, Debug) << "Auto detect camera " << entity->name();
 
-		CameraSensor sensor(entity);
-		if (sensor.init()) {
+		std::unique_ptr<CameraSensor> sensor =
+			CameraSensorFactoryBase::create(entity);
+		if (!sensor) {
 			LOG(NxpNeoPipe, Warning)
-				<< "Could not construct camera " << entity->name();
+				<< "Could not construct camera sensor "
+				<< entity->name();
 			continue;
 		}
-		Size size = sensor.resolution();
+		Size size = sensor->resolution();
 		ret = isiDevice->reservePipeBySize(size, &pipeIndex);
 		if (ret) {
 			LOG(NxpNeoPipe, Warning) << "Could not allocate pipe";
@@ -648,7 +675,7 @@ int PipelineConfig::parseRoutings(const YamlObject &platform, MediaDevice *media
 
 		routingMap_[entity] = routing;
 		LOG(NxpNeoPipe, Debug) << "Entity name " << entityName
-				   << " routing " << routing;
+				       << " routing " << routing;
 	}
 
 	return 0;
@@ -979,31 +1006,6 @@ int PipelineConfig::loadFromFile(std::string filename, MediaDevice *media,
 	}
 
 	return -EINVAL;
-}
-
-/**
- * \brief Load the pipeline configuration
- * \param[in] file The path to the pipeline configuration file
- * \param[in] media The frontend media controller device
- * \param[in] isiDevice The ISI Device associated to the media controller device
- *
- * Build the pipeline configuration from either the config file
- * if it exists and lists a setup corresponding to the frontend media controller
- * device. In case no such predefined is available, default to automatic
- * detection mode that works for pipelines that can be automatically discovered.
- *
- * \return 0 on success or a negative error code otherwise
- */
-int PipelineConfig::load(std::string filename, MediaDevice *media,
-			 ISIDevice *isiDevice)
-{
-	int ret;
-
-	ret = loadFromFile(filename, media, isiDevice);
-	if (ret)
-		ret = loadAutoDetect(media, isiDevice);
-
-	return ret;
 }
 
 } // namespace nxpneo

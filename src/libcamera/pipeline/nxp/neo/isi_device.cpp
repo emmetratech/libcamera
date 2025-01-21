@@ -4,12 +4,11 @@
  *     src/libcamera/pipeline/ipu3/cio2.cpp
  * Copyright (C) 2019, Google Inc.
  *
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  * isi_device.cpp - NXP ISI
  */
 
 #include <limits>
-#include <math.h>
 
 #include <linux/media-bus-format.h>
 
@@ -26,7 +25,6 @@
 #include "libcamera/internal/v4l2_subdevice.h"
 
 #include "isi_device.h"
-
 
 namespace libcamera {
 

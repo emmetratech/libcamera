@@ -5,7 +5,7 @@
  * Copyright (C) 2019, Google Inc.
  *
  * neo_ipa.cpp - NXP NEO Image Processing Algorithms
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  */
 
 #include <algorithm>
@@ -266,13 +266,13 @@ int IPANxpNeo::configure(const IPAConfigInfo &ipaConfig,
 
 	/*
 	 * When the AGC computes the new exposure values for a frame, it needs
-	 * to know the limits for shutter speed and analogue gain.
+	 * to know the limits for exposure time and analogue gain.
 	 * As it depends on the sensor, update it with the controls.
 	 *
-	 * \todo take VBLANK into account for maximum shutter speed
+	 * \todo take VBLANK into account for maximum exposure time
 	 */
-	context_.configuration.sensor.minShutterSpeed = vMinExposure[0] * 1.0s;
-	context_.configuration.sensor.maxShutterSpeed = vMaxExposure[0] * 1.0s;
+	context_.configuration.sensor.minExposureTime = vMinExposure[0] * 1.0s;
+	context_.configuration.sensor.maxExposureTime = vMaxExposure[0] * 1.0s;
 
 	context_.configuration.sensor.minAnalogueGain = vMinGain[0];
 	context_.configuration.sensor.maxAnalogueGain = vMaxGain[0];
