@@ -24,10 +24,11 @@
 #include <libipa/fc_queue.h>
 #include <libipa/vector.h>
 
+#include "nxp/cam_helper/camera_helper.h"
+
 namespace libcamera {
 
 namespace ipa::nxpneo {
-
 
 struct IPASessionConfiguration {
 	struct {
@@ -41,6 +42,14 @@ struct IPASessionConfiguration {
 	} awb;
 
 	struct {
+		/* BLC offsets applicable to the current driver mode */
+		uint16_t offsetRed_;
+		uint16_t offsetGreenR_;
+		uint16_t offsetGreenB_;
+		uint16_t offsetBlue_;
+	} blc;
+
+	struct {
 		utils::Duration minExposureTime;
 		utils::Duration maxExposureTime;
 		double minAnalogueGain;
@@ -50,8 +59,6 @@ struct IPASessionConfiguration {
 		utils::Duration lineDuration;
 		Size size;
 		uint32_t bpp;
-
-		size_t metaDataSize;
 	} sensor;
 
 	struct {
@@ -103,7 +110,12 @@ struct IPAFrameContext : public FrameContext {
 		RGB<double> gains;
 		unsigned int temperatureK;
 		bool autoEnabled;
+		bool colorGainsSet;
 	} awb;
+
+	struct {
+		bool colorOffsetsSet;
+	} blc;
 
 	struct {
 		uint32_t exposure;
@@ -124,6 +136,9 @@ struct IPAContext {
 	FCQueue<IPAFrameContext> frameContexts;
 
 	ControlInfoMap::Map ctrlMap;
+
+	/* Interface to the Camera Helper */
+	std::unique_ptr<nxp::CameraHelper> camHelper;
 };
 
 } /* namespace ipa::nxpneo */

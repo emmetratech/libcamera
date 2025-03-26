@@ -194,6 +194,22 @@ void CameraHelper::setCameraMode(const CameraMode &mode)
 }
 
 /**
+ * \brief Configure the camera helper with sensor control values
+ *
+ * This function passes the sensor control list populated with the actual
+ * control values read from the sensor.
+ * The usage from CameraHelper can be for instance to access the sensor
+ * calibrated values in OTP.
+ *
+ * \param[in] sensorCtrls The sensor control list
+ */
+void CameraHelper::setControls(const ControlList *sensorCtrls)
+{
+	/* Nothing to do */
+	(void)sensorCtrls;
+}
+
+/**
  * \brief Update sensor control list with AGC configuration
  * \param[inout] ctrls The control list to be updated
  * \param[in] exposure The AGC exposure duration in seconds
@@ -447,7 +463,7 @@ bool CameraHelper::controlListHasId(const ControlList *ctrls, unsigned int id)
  * \brief Base class for camera sensor helper factories
  *
  * The CameraHelperFactoryBase class is the base of all specializations of
- * the CamerarHelperFactory class template. It implements the factory
+ * the CameraHelperFactory class template. It implements the factory
  * registration, maintains a registry of factories, and provides access to the
  * registered factories.
  */
@@ -522,8 +538,8 @@ std::vector<CameraHelperFactoryBase *> &CameraHelperFactoryBase::factories()
 }
 
 /**
- * \class CamerarHelperFactory
- * \brief Registration of CamerarHelperFactory classes and creation of instances
+ * \class CameraHelperFactory
+ * \brief Registration of CameraHelperFactory classes and creation of instances
  * \tparam _Helper The camera sensor helper class type for this factory
  *
  * To facilitate discovery and instantiation of CameraHelper classes, the
@@ -535,7 +551,7 @@ std::vector<CameraHelperFactoryBase *> &CameraHelperFactoryBase::factories()
  */
 
 /**
- * \fn CamerarHelperFactory::CamerarHelperFactory(const char *name)
+ * \fn CameraHelperFactory::CameraHelperFactory(const char *name)
  * \brief Construct a camera sensor helper factory
  * \param[in] name Name of the camera sensor helper class
  *
@@ -547,7 +563,7 @@ std::vector<CameraHelperFactoryBase *> &CameraHelperFactoryBase::factories()
  */
 
 /**
- * \fn CamerarHelperFactory::createInstance() const
+ * \fn CameraHelperFactory::createInstance() const
  * \brief Create an instance of the CameraSensorHelper corresponding to the
  * factory
  *
