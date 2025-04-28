@@ -75,7 +75,7 @@ public:
 	unsigned int xbarSink_ = 0;
 	unsigned int sensorSourcePadIdx_ = 0;
 	unsigned int pipeOffset_ = 0;
-	Size sensorSizeMax_ = { 0, 0 };
+	Size sensorSizeMax_ = { 2048, 1536 };
 };
 
 class ISICameraConfiguration : public CameraConfiguration
