@@ -255,7 +255,6 @@ public:
 	bool sensorIsRgbIr() const { return sensorIsRgbIr_; }
 	void adjustTopLinesSize(Size *size) const;
 	int enumerateRawFormats();
-
 	int configureFrontEndFormat(V4L2SubdeviceFormat &sensorFormat,
 				    Transform transform);
 
@@ -309,7 +308,8 @@ private:
 	void neoStatsBufferReady(FrameBuffer *buffer);
 	void frameStart(uint32_t sequence);
 
-	void ipaParamsComputed(unsigned int id, ipa::nxpneo::IPAContextType context);
+	void ipaParamsComputed(unsigned int id, ipa::nxpneo::IPAContextType context,
+			       unsigned int bytesused);
 	void ipaMetadataReady(unsigned int id, ipa::nxpneo::IPAContextType context,
 			      const ControlList &metadata);
 	void ipaSetSensorControls(unsigned int id, ipa::nxpneo::IPAContextType context,
@@ -2186,8 +2186,9 @@ int NxpNeoCameraData::loadIPA()
 	ipa::nxpneo::SensorConfig sensorConfig;
 	const MediaEntity *entity = sensor->entity();
 	std::vector<uint32_t> ids = utils::map_keys(sensor_->controls().idmap());
-	ipa::nxpneo::InitParams initParams = { hwRevision, entity->name(),
-					       sensorInfo, sensor->controls(),
+	ipa::nxpneo::InitParams initParams = { hwRevision, neo_->apiVersion(),
+					       entity->name(), sensorInfo,
+					       sensor->controls(),
 					       sensor_->getControls(ids) };
 	ret = ipa_->init(IPASettings{ ipaTuningFile, sensor->model() },
 			 initParams, &ipaControls_, &sensorConfig);
@@ -2831,7 +2832,8 @@ void NxpNeoCameraData::frameStart(uint32_t sequence)
 }
 
 void NxpNeoCameraData::ipaParamsComputed(unsigned int id,
-					 ipa::nxpneo::IPAContextType context)
+					 ipa::nxpneo::IPAContextType context,
+					 unsigned int bytesused)
 {
 	NxpNeoFrames::Info *info = frameInfos_.find(id);
 	if (!info)
@@ -2854,8 +2856,7 @@ void NxpNeoCameraData::ipaParamsComputed(unsigned int id,
 	FrameBuffer *paramsBuffer =
 		frameInfos_.buffer(info, _context, BufferTypeParams, true);
 	if (paramsBuffer) {
-		paramsBuffer->_d()->metadata().planes()[0].bytesused =
-			sizeof(struct neoisp_meta_params_s);
+		paramsBuffer->_d()->metadata().planes()[0].bytesused = bytesused;
 		ret |= neo_->params_->queueBuffer(paramsBuffer);
 	}
 	FrameBuffer *statsBuffer =
