@@ -40,23 +40,24 @@ class PipelineHandlerISI;
 class ISICameraData : public Camera::Private
 {
 public:
-	ISICameraData(PipelineHandler *ph)
+	/* Maximum amount of streams (ie pipes) per camera */
+	static constexpr unsigned int kNumStreams = 3;
+
+	ISICameraData(PipelineHandler *ph, unsigned int numStreams)
 		: Camera::Private(ph)
 	{
-		/*
-		 * \todo Assume 2 channels only for now, as that's the number of
-		 * available channels on i.MX8MP.
-		 */
-		streams_.resize(2);
+		streams_.resize(std::min(kNumStreams, numStreams));
 	}
 
 	PipelineHandlerISI *pipe();
 
 	int init();
+	int setupFormats(V4L2SubdeviceFormat *format,
+			 V4L2Subdevice::Whence whence = V4L2Subdevice::ActiveFormat) const;
 
 	unsigned int pipeIndex(const Stream *stream)
 	{
-		return stream - &*streams_.begin();
+		return stream - &*streams_.begin() + pipeOffset_;
 	}
 
 	unsigned int getRawMediaBusFormat(PixelFormat *pixelFormat) const;
@@ -65,12 +66,16 @@ public:
 
 	std::unique_ptr<CameraSensor> sensor_;
 	std::unique_ptr<V4L2Subdevice> csis_;
+	std::unique_ptr<V4L2Subdevice> formatter_;
 
 	std::vector<Stream> streams_;
 
 	std::vector<Stream *> enabledStreams_;
 
-	unsigned int xbarSink_;
+	unsigned int xbarSink_ = 0;
+	unsigned int sensorSourcePadIdx_ = 0;
+	unsigned int pipeOffset_ = 0;
+	Size sensorSizeMax_ = { 2048, 1536 };
 };
 
 class ISICameraConfiguration : public CameraConfiguration
@@ -164,7 +169,63 @@ int ISICameraData::init()
 	if (ret)
 		return ret;
 
+	if (formatter_) {
+		ret = formatter_->open();
+
+		if (ret)
+			return ret;
+	}
+
 	properties_ = sensor_->properties();
+
+	return 0;
+}
+
+/**
+ * \brief Apply/Try a format to the pipeline's subdevs
+ *
+ * Configure pipeline's subdevs before the ISI: sensor, camera port, and
+ * optionally formatter. Format is propagated from upstream to downstream,
+ * retrieving the source pad format of the upstream device to set it to the
+ * sink pad of the downstream device.
+ *
+ * Finally, the format reported at the end of the loop takes into account
+ * all subdevs' constraints.
+ *
+ * \return 0 in case of success, error code otherwise
+ */
+int ISICameraData::setupFormats(V4L2SubdeviceFormat *format,
+				V4L2Subdevice::Whence whence) const
+{
+	V4L2SubdeviceFormat sourceFormat = *format;
+	int ret;
+
+	if (whence == V4L2Subdevice::TryFormat)
+		ret = sensor_->tryFormat(format);
+	else
+		ret = sensor_->setFormat(format);
+
+	if (ret)
+		return ret;
+
+	std::vector<V4L2Subdevice *> subdevs = { csis_.get() };
+
+	if (formatter_)
+		subdevs.push_back(formatter_.get());
+
+	for (V4L2Subdevice *subdev : subdevs) {
+		ret = subdev->setFormat(0, format, whence);
+		if (ret)
+			return ret;
+
+		ret = subdev->getFormat(1, format, whence);
+		if (ret)
+			return ret;
+	}
+
+	if (sourceFormat.size != format->size ||
+	    sourceFormat.code != format->code)
+		return -EINVAL;
 
 	return 0;
 }
@@ -272,6 +333,8 @@ unsigned int ISICameraData::getYuvMediaBusFormat(const PixelFormat &pixelFormat)
 	 * the ISI driver.
 	 */
 	std::vector<unsigned int> yuvCodes = {
+		MEDIA_BUS_FMT_UYVY8_2X8,
+		MEDIA_BUS_FMT_YUYV8_2X8,
 		MEDIA_BUS_FMT_UYVY8_1X16,
 		MEDIA_BUS_FMT_YUV8_1X24,
 		MEDIA_BUS_FMT_RGB565_1X16,
@@ -296,7 +359,9 @@ unsigned int ISICameraData::getYuvMediaBusFormat(const PixelFormat &pixelFormat)
 	const PixelFormatInfo &info = PixelFormatInfo::info(pixelFormat);
 	for (unsigned int code : supportedCodes) {
 		if (info.colourEncoding == PixelFormatInfo::ColourEncodingYUV &&
-		    (code == MEDIA_BUS_FMT_UYVY8_1X16 ||
+		    (code == MEDIA_BUS_FMT_UYVY8_2X8 ||
+		     code == MEDIA_BUS_FMT_YUYV8_2X8 ||
+		     code == MEDIA_BUS_FMT_UYVY8_1X16 ||
 		     code == MEDIA_BUS_FMT_YUV8_1X24))
 			return code;
 
@@ -464,7 +529,7 @@ ISICameraConfiguration::validateYuv(std::set<Stream *> &availableStreams,
 
 		/* Cap the streams size to the maximum accepted resolution. */
 		Size configSize = cfg.size;
-		cfg.size.boundTo(maxResolution);
+		cfg.size.boundTo(maxResolution).boundTo(data_->sensorSizeMax_);
 		if (cfg.size != configSize) {
 			LOG(ISI, Debug)
 				<< "Stream " << i << " adjusted to " << cfg.size;
@@ -585,6 +650,25 @@ CameraConfiguration::Status ISICameraConfiguration::validate()
 	}
 
 	/*
+	 * When ISP is used, previous test may not return any valid size.
+	 * Indeed, in such case ISP is considered as the sensor element in
+	 * the pipeline. Moreover, size taken in consideration is the largest
+	 * size reported by the driver (max value is considered even if min/max
+	 * range is shared). Then ISP (sensor) size becomes much bigger than
+	 * requested size.
+	 *
+	 * In such case, we can use value reported by resolution() callback,
+	 * which is the size corresponding to the attached sensor, actually
+	 * smaller than ISP size.
+	 */
+	if (bestSize.isNull()) {
+		Size s = sensor->resolution();
+
+		if (s.width <= maxResolution.width)
+			bestSize = s;
+	}
+
+	/*
 	 * This should happen only if the sensor can only produce formats that
 	 * exceed the maximum allowed input width.
 	 */
@@ -628,16 +712,34 @@ StreamConfiguration PipelineHandlerISI::generateYUVConfiguration(Camera *camera,
 	if (!mbusCode)
 		return {};
 
-	/* Adjust the requested size to the sensor's capabilities. */
+	/* Adjust the requested size to the pipeline's subdevs capabilities. */
 	V4L2SubdeviceFormat sensorFmt;
 	sensorFmt.code = mbusCode;
-	sensorFmt.size = size;
+	std::vector<Size> sizes = data->sensor_->sizes(mbusCode);
 
-	int ret = data->sensor_->tryFormat(&sensorFmt);
-	if (ret) {
-		LOG(ISI, Error) << "Failed to try sensor format.";
-		return {};
+	const MediaEntity *entity = data->sensor_->entity();
+	if (entity->function() == MEDIA_ENT_F_PROC_VIDEO_ISP)
+		sizes.push_back(data->sensor_->resolution());
+
+	std::sort(sizes.begin(), sizes.end());
+	std::reverse(sizes.begin(), sizes.end());
+
+	int ret = -EINVAL;
+	for (const Size &s : sizes) {
+		if (s > size)
+			continue;
+
+		sensorFmt.size = s;
+		ret = data->setupFormats(&sensorFmt, V4L2Subdevice::TryFormat);
+		if (!ret)
+			break;
 	}
+
+	if (ret)
+		return {};
+
+	/* Save maximum input size supported */
+	data->sensorSizeMax_ = sensorFmt.size;
 
 	Size sensorSize = sensorFmt.size;
 
@@ -662,7 +764,7 @@ StreamConfiguration PipelineHandlerISI::generateYUVConfiguration(Camera *camera,
 	StreamConfiguration cfg(formats);
 	cfg.pixelFormat = pixelFormat;
 	cfg.size = sensorSize;
-	cfg.bufferCount = 4;
+	cfg.bufferCount = 5;
 
 	return cfg;
 }
@@ -730,7 +832,7 @@ StreamConfiguration PipelineHandlerISI::generateRawConfiguration(Camera *camera)
 	StreamConfiguration cfg(formats);
 	cfg.size = sensor->resolution();
 	cfg.pixelFormat = pixelFormat;
-	cfg.bufferCount = 4;
+	cfg.bufferCount = 5;
 
 	return cfg;
 }
@@ -761,30 +863,28 @@ PipelineHandlerISI::generateConfiguration(Camera *camera,
 		 */
 		StreamConfiguration cfg;
 
-                switch (role) {
-                case StreamRole::StillCapture:
-                case StreamRole::Viewfinder:
-                case StreamRole::VideoRecording: {
-                        Size size = role == StreamRole::StillCapture
-                                  ? data->sensor_->resolution()
-                                  : PipelineHandlerISI::kPreviewSize;
-                        cfg = generateYUVConfiguration(camera, size);
-                        if (cfg.pixelFormat.isValid())
-                                break;
+		switch (role) {
+		case StreamRole::StillCapture:
+		case StreamRole::Viewfinder:
+		case StreamRole::VideoRecording: {
+			Size size = role == StreamRole::StillCapture
+					    ? data->sensor_->resolution()
+					    : PipelineHandlerISI::kPreviewSize;
+			cfg = generateYUVConfiguration(camera, size);
+			if (cfg.pixelFormat.isValid())
+				break;
 
+			/*
+			 * Fallback to use a Bayer format if that's what the
+			 * sensor supports.
+			 */
+			[[fallthrough]];
+		}
 
-                        /*
-                         * Fallback to use a Bayer format if that's what the
-                         * sensor supports.
-                         */
-                        [[fallthrough]];
-
-		 }
-
-                case StreamRole::Raw: {
-                        cfg = generateRawConfiguration(camera);
-                        break;
-                }
+		case StreamRole::Raw: {
+			cfg = generateRawConfiguration(camera);
+			break;
+		}
 
 		default:
 			LOG(ISI, Error) << "Requested stream role not supported: " << role;
@@ -810,49 +910,37 @@ int PipelineHandlerISI::configure(Camera *camera, CameraConfiguration *c)
 	ISICameraConfiguration *camConfig = static_cast<ISICameraConfiguration *>(c);
 	ISICameraData *data = cameraData(camera);
 
-	/* All links are immutable except the sensor -> csis link. */
-	const MediaPad *sensorSrc = data->sensor_->entity()->getPadByIndex(0);
-	sensorSrc->links()[0]->setEnabled(true);
-
 	/*
-	 * Reset the crossbar switch routing and enable one route for each
-	 * requested stream configuration.
-	 *
-	 * \todo Handle concurrent usage of multiple cameras by adjusting the
-	 * routing table instead of resetting it.
+	 * All links are immutable except the sensor/isp -> csis link.
 	 */
-	V4L2Subdevice::Routing routing = {};
-	unsigned int xbarFirstSource = crossbar_->entity()->pads().size() / 2 + 1;
-
-	for (const auto &[idx, config] : utils::enumerate(*c)) {
-		uint32_t sourcePad = xbarFirstSource + idx;
-		routing.emplace_back(V4L2Subdevice::Stream{ data->xbarSink_, 0 },
-				     V4L2Subdevice::Stream{ sourcePad, 0 },
-				     V4L2_SUBDEV_ROUTE_FL_ACTIVE);
-	}
-
-	int ret = crossbar_->setRouting(&routing, V4L2Subdevice::ActiveFormat);
-	if (ret)
-		return ret;
+	const MediaPad *sensorSrc = data->sensor_->entity()->getPadByIndex(data->sensorSourcePadIdx_);
+	sensorSrc->links()[0]->setEnabled(true);
 
 	/* Apply format to the sensor and CSIS receiver. */
 	V4L2SubdeviceFormat format = camConfig->sensorFormat_;
-	ret = data->sensor_->setFormat(&format);
+
+	int ret = data->setupFormats(&format);
 	if (ret)
 		return ret;
 
-	ret = data->csis_->setFormat(0, &format);
-	if (ret)
-		return ret;
-
+	/*
+	 * Now configure crossbar pads associated to the camera (that
+	 * is 1 sink pad and possibly several source pads).
+	 * Crossbar config applied to sink pad is internally propagated
+	 * to the source pads because routes are moved to Active state
+	 * during the 'match' step.
+	 * As a consequence, each pipe allocated to that camera has an
+	 * active route in the crossbar even if the associated stream
+	 * is currently not enabled. To start a stream, the Linux driver
+	 * for imx8-isi requires that each pipe associated to that
+	 * camera has its sink format configured.
+	 */
 	ret = crossbar_->setFormat(data->xbarSink_, &format);
 	if (ret)
 		return ret;
 
-	/* Now configure the ISI and video node instances, one per stream. */
-	data->enabledStreams_.clear();
-	for (const auto &config : *c) {
-		Pipe *pipe = pipeFromStream(camera, config.stream());
+	for (unsigned i = 0; i < data->streams_.size(); i++) {
+		Pipe *pipe = &pipes_.at(data->pipeOffset_ + i);
 
 		/*
 		 * Set the format on the ISI sink pad: it must match what is
@@ -861,6 +949,12 @@ int PipelineHandlerISI::configure(Camera *camera, CameraConfiguration *c)
 		ret = pipe->isi->setFormat(0, &format);
 		if (ret)
 			return ret;
+	}
+
+	/* Now configure the ISI and video node instances, one per stream. */
+	data->enabledStreams_.clear();
+	for (const auto &config : *c) {
+		Pipe *pipe = pipeFromStream(camera, config.stream());
 
 		/*
 		 * Configure the ISI sink compose rectangle to downscale the
@@ -972,6 +1066,18 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 	if (!isiDev_)
 		return false;
 
+	/* Estimate number of sensors */
+	unsigned cameraCount = 0;
+	for (MediaEntity *entity : isiDev_->entities()) {
+		if (entity->function() != MEDIA_ENT_F_CAM_SENSOR)
+			continue;
+
+		cameraCount++;
+	}
+
+	if (!cameraCount)
+		return false;
+
 	/*
 	 * Acquire the subdevs and video nodes for the crossbar switch and the
 	 * processing pipelines.
@@ -1005,7 +1111,7 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 
 		ret = capture->open();
 		if (ret)
-			return ret;
+			return false;
 
 		pipes_.push_back({ std::move(isi), std::move(capture) });
 	}
@@ -1015,16 +1121,26 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 		return false;
 	}
 
+	if (cameraCount > pipes_.size()) {
+		LOG(ISI, Error) << "Too many cameras";
+		return false;
+	}
+
 	/*
 	 * Loop over all the crossbar switch sink pads to find connected CSI-2
 	 * receivers and camera sensors.
 	 */
 	unsigned int numCameras = 0;
 	unsigned int numSinks = 0;
+
+	/* Prepare routing map */
+	V4L2Subdevice::Routing routing = {};
+	unsigned int xbarFirstSource = crossbar_->entity()->pads().size() - pipes_.size();
+
 	for (MediaPad *pad : crossbar_->entity()->pads()) {
 		unsigned int sink = numSinks;
 
-		if (!(pad->flags() & MEDIA_PAD_FL_SINK) || pad->links().empty())
+		if (!(pad->flags() & MEDIA_PAD_FL_SINK))
 			continue;
 
 		/*
@@ -1033,6 +1149,21 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 		 */
 		numSinks++;
 
+		if (pad->links().empty())
+			continue;
+
+		/* formatter (optional, not present on all i.MX platforms) */
+		MediaEntity *formatter = pad->links()[0]->source()->entity();
+		if (formatter->pads().size() != 2 || formatter->function() != MEDIA_ENT_F_PROC_VIDEO_PIXEL_FORMATTER) {
+			LOG(ISI, Debug) << "Bypass formatter "
+					<< formatter->name();
+			formatter = nullptr;
+		} else {
+			/* jump to next entity */
+			pad = formatter->pads()[0];
+		}
+
+		/* CSI */
 		MediaEntity *csi = pad->links()[0]->source()->entity();
 		if (csi->pads().size() != 2) {
 			LOG(ISI, Debug) << "Skip unsupported CSI-2 receiver "
@@ -1044,20 +1175,52 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 		if (!(pad->flags() & MEDIA_PAD_FL_SINK) || pad->links().empty())
 			continue;
 
+		/* Sensor - When present, ISP is considerred as a sensor from pipeline point of view. */
 		MediaEntity *sensor = pad->links()[0]->source()->entity();
-		if (sensor->function() != MEDIA_ENT_F_CAM_SENSOR) {
+		if (sensor->function() != MEDIA_ENT_F_CAM_SENSOR && sensor->function() != MEDIA_ENT_F_PROC_VIDEO_ISP) {
 			LOG(ISI, Debug) << "Skip unsupported subdevice "
 					<< sensor->name();
 			continue;
 		}
 
+		unsigned int sensorSourcePadIx = 0;
+		for (MediaPad *sensorPad : sensor->pads()) {
+			if (!(sensorPad->flags() & MEDIA_PAD_FL_SOURCE) || sensorPad->links().empty())
+				/*
+				* Count each sensor pad to enable the one
+				* currently used in the pipeline.
+				*/
+				sensorSourcePadIx++;
+		}
+
+		/*
+		 * Define maximum amount of streams per camera
+		 * In case of multiple cameras, limit maximum amount of streams
+		 * to allow all cameras to get at least one dedicated pipe
+		 */
+		unsigned int maxStreams = pipes_.size() / cameraCount;
+
 		/* Create the camera data. */
 		std::unique_ptr<ISICameraData> data =
-			std::make_unique<ISICameraData>(this);
+			std::make_unique<ISICameraData>(this, maxStreams);
 
 		data->sensor_ = CameraSensorFactoryBase::create(sensor);
 		data->csis_ = std::make_unique<V4L2Subdevice>(csi);
 		data->xbarSink_ = sink;
+		data->sensorSourcePadIdx_ = sensorSourcePadIx;
+		data->pipeOffset_ = numCameras * data->streams_.size();
+
+		LOG(ISI, Debug)
+			<< "cam" << numCameras
+			<< " streams " << data->streams_.size()
+			<< " offset " << data->pipeOffset_;
+
+		/*
+		 * Formatter is optional.
+		 * Some i.MX SOCs such as i.MX8 doesn't have any formatter, while i.MX9 has one.
+		 */
+		if (formatter)
+			data->formatter_ = std::make_unique<V4L2Subdevice>(formatter);
 
 		ret = data->init();
 		if (ret) {
@@ -1072,12 +1235,23 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 			       std::inserter(streams, streams.end()),
 			       [](Stream &s) { return &s; });
 
+		/* Prepare routing */
+		for (unsigned i = 0; i < data->streams_.size(); i++) {
+			routing.emplace_back(V4L2Subdevice::Stream{ data->xbarSink_, 0 },
+					     V4L2Subdevice::Stream{ xbarFirstSource + data->pipeOffset_ + i, 0 },
+					     V4L2_SUBDEV_ROUTE_FL_ACTIVE);
+		}
+
 		std::shared_ptr<Camera> camera =
 			Camera::create(std::move(data), id, streams);
 
 		registerCamera(std::move(camera));
 		numCameras++;
 	}
+
+	ret = crossbar_->setRouting(&routing, V4L2Subdevice::ActiveFormat);
+	if (ret)
+		return false;
 
 	return numCameras > 0;
 }
