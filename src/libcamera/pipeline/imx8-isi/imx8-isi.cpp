@@ -1124,14 +1124,16 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 			continue;
 		}
 
-		unsigned int sensorSourcePadIx = 0;
+		unsigned int sensorSourcePadIdx = 0;
 		for (MediaPad *sensorPad : sensor->pads()) {
 			if (!(sensorPad->flags() & MEDIA_PAD_FL_SOURCE) || sensorPad->links().empty())
 				/*
 				* Count each sensor pad to enable the one
 				* currently used in the pipeline.
 				*/
-				sensorSourcePadIx++;
+				sensorSourcePadIdx++;
+			else
+				break;
 		}
 
 		/*
@@ -1148,7 +1150,7 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 		data->sensor_ = CameraSensorFactoryBase::create(sensor);
 		data->csis_ = std::make_unique<V4L2Subdevice>(csi);
 		data->xbarSink_ = sink;
-		data->sensorSourcePadIdx_ = sensorSourcePadIx;
+		data->sensorSourcePadIdx_ = sensorSourcePadIdx;
 		data->pipeOffset_ = numCameras * data->streams_.size();
 
 		LOG(ISI, Debug)
