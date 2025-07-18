@@ -37,6 +37,7 @@
 
 #include "ipa_context.h"
 #include "neo_ipa_version.h"
+#include "params.h"
 
 namespace libcamera {
 
@@ -98,6 +99,9 @@ private:
 	/* revision-specific data */
 	uint32_t hwRevision_;
 
+	/* API version */
+	uint32_t apiVersion_;
+
 	/* Local parameter storage */
 	struct IPAContext context_;
 };
@@ -132,7 +136,9 @@ int IPANxpNeo::init(const IPASettings &settings, const InitParams &params,
 
 	LOG(NxpNeoIPA, Debug) << "Hardware revision is " << params.hwRevision;
 	LOG(NxpNeoIPA, Debug) << "Sensor entity: " << params.sensorEntity;
+	LOG(NxpNeoIPA, Debug) << "API version is " << params.apiVersion;
 
+	apiVersion_ = params.apiVersion;
 	context_.camHelper = CameraHelperFactoryBase::create(settings.sensorModel);
 	if (!context_.camHelper) {
 		LOG(NxpNeoIPA, Error)
@@ -252,10 +258,9 @@ int IPANxpNeo::configure(const IPAConfigInfo &ipaConfig,
 	context_.activeState = {};
 	context_.frameContexts.clear();
 
-	/* Set the hardware revision for the algorithms. */
+	/* Set the hardware revision and the api version for the algorithms. */
 	context_.configuration.hw.revision = hwRevision_;
-
-	context_.configuration.apiVersion = ipaConfig.apiVersion;
+	context_.configuration.hw.apiVersion = apiVersion_;
 
 	const IPACameraSensorInfo &info = ipaConfig.sensorInfo;
 	const ControlInfo vBlank = sensorControls_.find(V4L2_CID_VBLANK)->second;
@@ -414,17 +419,14 @@ void IPANxpNeo::computeParams(const uint32_t frame, const IPAContextType context
 	unsigned int paramsBufferId =
 		paramsIter != bufferIds.end() ? paramsIter->second : 0;
 	ASSERT(mappedBuffers_.count(paramsBufferId));
-	neoisp_meta_params_s *params =
-		reinterpret_cast<neoisp_meta_params_s *>(
-			mappedBuffers_.at(paramsBufferId).planes()[0].data());
 
-	params->frame_id = 0;
-	params->features_cfg = {};
+	NxpNeoParams params(context_.configuration.hw.apiVersion,
+			    mappedBuffers_.at(paramsBufferId).planes()[0]);
 
 	for (auto const &algo : algorithms())
-		algo->prepare(context_, frame, frameContext, params);
+		algo->prepare(context_, frame, frameContext, &params);
 
-	paramsComputed.emit(frame, context);
+	paramsComputed.emit(frame, context, params.size());
 }
 
 void IPANxpNeo::processStats(const uint32_t frame, const IPAContextType context,
@@ -433,14 +435,12 @@ void IPANxpNeo::processStats(const uint32_t frame, const IPAContextType context,
 {
 	IPAFrameContext &frameContext = context_.frameContexts.get(frame);
 
-	const neoisp_meta_stats_s *stats;
-
 	auto statsIter = bufferIds.find(IPABufferTypeStats);
 	unsigned int statsBufferId =
 		statsIter != bufferIds.end() ? statsIter->second : 0;
 	ASSERT(mappedBuffers_.count(statsBufferId));
-	stats = reinterpret_cast<neoisp_meta_stats_s *>(
-		mappedBuffers_.at(statsBufferId).planes()[0].data());
+	const NxpNeoStats stats(context_.configuration.hw.apiVersion,
+				mappedBuffers_.at(statsBufferId).planes()[0]);
 
 	ControlList &mdControls = frameContext.sensor.mdControls;
 
@@ -495,7 +495,7 @@ void IPANxpNeo::processStats(const uint32_t frame, const IPAContextType context,
 		Algorithm *algo = static_cast<Algorithm *>(a.get());
 		if (algo->disabled_)
 			continue;
-		algo->process(context_, frame, frameContext, stats, metadata);
+		algo->process(context_, frame, frameContext, &stats, metadata);
 	}
 
 	/*

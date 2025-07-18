@@ -56,6 +56,7 @@ struct IPASessionConfiguration {
 
 	struct {
 		uint32_t revision;
+		uint32_t apiVersion;
 	} hw;
 
 	struct {
