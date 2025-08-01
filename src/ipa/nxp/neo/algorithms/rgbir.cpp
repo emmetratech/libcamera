@@ -163,14 +163,10 @@ void RgbIr::prepare([[maybe_unused]] IPAContext &context, const uint32_t frame,
 		<< rgbirConfig->ccm1_th_threshold << " "
 		<< rgbirConfig->ccm2_th_threshold;
 
-	/* Look for 8 or 16 bits IR stream, and defaults to 8 bits */
+	/* Look for 8 or 16 bits IR stream, and defaults to 8 bits. */
 	bool irStream16bits = false;
-	std::vector<IPAStream> &streams = context.configuration.streams;
-	auto iter = std::find_if(streams.begin(), streams.end(),
-				 [](auto &stream) {
-					 return stream.pixelFormat == formats::R16.fourcc();
-				 });
-	if (iter != streams.end())
+	IPAStream streamIr = context.configuration.streams[IPAStreamTypeIr];
+	if (streamIr.pixelFormat == formats::R16.fourcc())
 		irStream16bits = true;
 
 	/* IR Compression configuration */
