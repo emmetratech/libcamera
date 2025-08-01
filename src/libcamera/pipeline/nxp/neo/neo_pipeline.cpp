@@ -2808,43 +2808,10 @@ void NxpNeoCameraData::neoStatsBufferReady(FrameBuffer *buffer)
 /*
  * \brief Handle the start of frame exposure signal
  * \param[in] sequence The sequence number of frame
- *
- * Inspect the list of pending requests waiting for a RAW frame to be
- * produced and apply controls for the 'next' one.
- *
- * Some controls need to be applied immediately, such as the
- * TestPatternMode one. Other controls are handled through the delayed
- * controls class.
  */
 void NxpNeoCameraData::frameStart(uint32_t sequence)
 {
 	delayedCtrls_->applyControls(sequence);
-
-	if (processingRequests_.empty())
-		return;
-
-	/*
-	 * Handle controls to be set immediately on the next frame.
-	 * This currently only handle the TestPatternMode control.
-	 *
-	 * \todo Synchronize with the sequence number
-	 */
-	Request *request = processingRequests_.front();
-
-	const auto &testPatternMode = request->controls().get(controls::draft::TestPatternMode);
-	if (!testPatternMode)
-		return;
-
-	int ret = sensor_->setTestPatternMode(
-		static_cast<controls::draft::TestPatternModeEnum>(*testPatternMode));
-	if (ret) {
-		LOG(NxpNeoPipe, Error)
-			<< "Failed to set test pattern mode: " << ret;
-		return;
-	}
-
-	request->metadata().set(controls::draft::TestPatternMode,
-				*testPatternMode);
 }
 
 void NxpNeoCameraData::ipaParamsComputed(unsigned int id,
