@@ -255,6 +255,8 @@ int IPANxpNeo::configure(const IPAConfigInfo &ipaConfig,
 	/* Set the hardware revision for the algorithms. */
 	context_.configuration.hw.revision = hwRevision_;
 
+	context_.configuration.apiVersion = ipaConfig.apiVersion;
+
 	const IPACameraSensorInfo &info = ipaConfig.sensorInfo;
 	const ControlInfo vBlank = sensorControls_.find(V4L2_CID_VBLANK)->second;
 	context_.configuration.sensor.defVBlank = vBlank.def().get<int32_t>();
