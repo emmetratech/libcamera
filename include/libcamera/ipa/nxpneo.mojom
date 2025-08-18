@@ -50,6 +50,7 @@ struct IPAColorSpace {
 
 struct InitParams {
 	uint32 hwRevision;
+	uint32 apiVersion;
 	string sensorEntity;
 	libcamera.IPACameraSensorInfo sensorInfo;
 	libcamera.ControlInfoMap sensorControls;
@@ -125,7 +126,7 @@ interface IPANxpNeoInterface {
 };
 
 interface IPANxpNeoEventInterface {
-	paramsComputed(uint32 frame, IPAContextType context);
+	paramsComputed(uint32 frame, IPAContextType context, uint32 bytesused);
 	setSensorControls(uint32 frame, IPAContextType context, libcamera.ControlList sensorControls);
 	metadataReady(uint32 frame, IPAContextType context, libcamera.ControlList metadata);
 };
