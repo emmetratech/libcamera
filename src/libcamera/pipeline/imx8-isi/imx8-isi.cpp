@@ -64,6 +64,7 @@ public:
 
 	std::unique_ptr<CameraSensor> sensor_;
 	std::unique_ptr<V4L2Subdevice> csis_;
+	std::unique_ptr<V4L2Subdevice> formatter_;
 
 	std::vector<Stream> streams_;
 
@@ -163,6 +164,13 @@ int ISICameraData::init()
 	int ret = csis_->open();
 	if (ret)
 		return ret;
+
+	if (formatter_) {
+		ret = formatter_->open();
+
+		if (ret)
+			return ret;
+	}
 
 	properties_ = sensor_->properties();
 
@@ -272,6 +280,8 @@ unsigned int ISICameraData::getYuvMediaBusFormat(const PixelFormat &pixelFormat)
 	 * the ISI driver.
 	 */
 	std::vector<unsigned int> yuvCodes = {
+		MEDIA_BUS_FMT_UYVY8_2X8,
+		MEDIA_BUS_FMT_YUYV8_2X8,
 		MEDIA_BUS_FMT_UYVY8_1X16,
 		MEDIA_BUS_FMT_YUV8_1X24,
 		MEDIA_BUS_FMT_RGB565_1X16,
@@ -296,7 +306,9 @@ unsigned int ISICameraData::getYuvMediaBusFormat(const PixelFormat &pixelFormat)
 	const PixelFormatInfo &info = PixelFormatInfo::info(pixelFormat);
 	for (unsigned int code : supportedCodes) {
 		if (info.colourEncoding == PixelFormatInfo::ColourEncodingYUV &&
-		    (code == MEDIA_BUS_FMT_UYVY8_1X16 ||
+		    (code == MEDIA_BUS_FMT_UYVY8_2X8 ||
+		     code == MEDIA_BUS_FMT_YUYV8_2X8 ||
+		     code == MEDIA_BUS_FMT_UYVY8_1X16 ||
 		     code == MEDIA_BUS_FMT_YUV8_1X24))
 			return code;
 
@@ -585,6 +597,25 @@ CameraConfiguration::Status ISICameraConfiguration::validate()
 	}
 
 	/*
+	 * When ISP is used, previous test may not return any valid size.
+	 * Indeed, in such case ISP is considered as the sensor element in
+	 * the pipeline. Moreover, size taken in consideration is the largest
+	 * size reported by the driver (max value is considered even if min/max
+	 * range is shared). Then ISP (sensor) size becomes much bigger than
+	 * requested size.
+	 *
+	 * In such case, we can use value reported by resolution() callback,
+	 * which is the size corresponding to the attached sensor, actually
+	 * smaller than ISP size.
+	 */
+	if (bestSize.isNull()) {
+		Size s = sensor->resolution();
+
+		if (s.width <= maxResolution.width)
+			bestSize = s;
+	}
+
+	/*
 	 * This should happen only if the sensor can only produce formats that
 	 * exceed the maximum allowed input width.
 	 */
@@ -662,7 +693,7 @@ StreamConfiguration PipelineHandlerISI::generateYUVConfiguration(Camera *camera,
 	StreamConfiguration cfg(formats);
 	cfg.pixelFormat = pixelFormat;
 	cfg.size = sensorSize;
-	cfg.bufferCount = 4;
+	cfg.bufferCount = 5;
 
 	return cfg;
 }
@@ -730,7 +761,7 @@ StreamConfiguration PipelineHandlerISI::generateRawConfiguration(Camera *camera)
 	StreamConfiguration cfg(formats);
 	cfg.size = sensor->resolution();
 	cfg.pixelFormat = pixelFormat;
-	cfg.bufferCount = 4;
+	cfg.bufferCount = 5;
 
 	return cfg;
 }
@@ -817,6 +848,14 @@ int PipelineHandlerISI::configure(Camera *camera, CameraConfiguration *c)
 	ret = data->csis_->setFormat(0, &format);
 	if (ret)
 		return ret;
+
+	/* Apply format to the formatter if present */
+	if (data->formatter_) {
+		ret = data->formatter_->setFormat(0, &format);
+
+		if (ret)
+			return ret;
+	}
 
 	ret = crossbar_->setFormat(data->xbarSink_, &format);
 	if (ret)
@@ -1051,6 +1090,22 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 		if (pad->links().empty())
 			continue;
 
+		/* formatter (optional, not present on all i.MX platforms) */
+		MediaEntity *formatter = pad->links()[0]->source()->entity();
+		if (formatter->pads().size() != 2 || formatter->function() != MEDIA_ENT_F_PROC_VIDEO_PIXEL_FORMATTER) {
+			LOG(ISI, Debug) << "Bypass formatter "
+					<< formatter->name();
+			formatter = nullptr;
+		} else {
+			/* jump to next entity */
+			pad = formatter->pads()[0];
+
+			/* No links on pad implies missing CSI. */
+			if (pad->links().empty())
+				continue;
+		}
+
+		/* CSI */
 		MediaEntity *csi = pad->links()[0]->source()->entity();
 		if (csi->pads().size() != 2) {
 			LOG(ISI, Debug) << "Skip unsupported CSI-2 receiver "
@@ -1062,15 +1117,28 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 		if (!(pad->flags() & MEDIA_PAD_FL_SINK) || pad->links().empty())
 			continue;
 
+		/* Sensor - When present, ISP is considerred as a sensor from pipeline point of view. */
 		MediaEntity *sensor = pad->links()[0]->source()->entity();
-		if (sensor->function() != MEDIA_ENT_F_CAM_SENSOR) {
+		if (sensor->function() != MEDIA_ENT_F_CAM_SENSOR && sensor->function() != MEDIA_ENT_F_PROC_VIDEO_ISP) {
 			LOG(ISI, Debug) << "Skip unsupported subdevice "
 					<< sensor->name();
 			continue;
 		}
 
+		unsigned int sensorSourcePadIdx = 0;
+		for (MediaPad *sensorPad : sensor->pads()) {
+			if (!(sensorPad->flags() & MEDIA_PAD_FL_SOURCE) || sensorPad->links().empty())
+				/*
+				* Count each sensor pad to enable the one
+				* currently used in the pipeline.
+				*/
+				sensorSourcePadIdx++;
+			else
+				break;
+		}
+
 		/* All links are immutable except the sensor -> csis link. */
-		const MediaPad *sensorSrc = sensor->getPadByIndex(0);
+		const MediaPad *sensorSrc = sensor->getPadByIndex(sensorSourcePadIdx);
 		sensorSrc->links()[0]->setEnabled(true);
 
 		/* Create the camera data. */
@@ -1087,6 +1155,13 @@ bool PipelineHandlerISI::match(DeviceEnumerator *enumerator)
 			<< " streams " << data->streams_.size()
 			<< " sink " << data->xbarSink_
 			<< " offset " << data->xbarSourceOffset_;
+
+		/*
+		 * Formatter is optional.
+		 * Some i.MX SOCs such as i.MX8 doesn't have any formatter, while i.MX9 has one.
+		 */
+		if (formatter)
+			data->formatter_ = std::make_unique<V4L2Subdevice>(formatter);
 
 		ret = data->init();
 		if (ret) {
