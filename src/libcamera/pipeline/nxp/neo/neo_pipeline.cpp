@@ -1605,14 +1605,16 @@ int NxpNeoCameraData::configure(CameraConfiguration *c)
 		Stream *stream = cfg.stream();
 
 		if (stream == &streamFrame_) {
-			streamConfig[0] = IPAStream(cfg.pixelFormat, cfg.size);
+			streamConfig[ipa::nxpneo::IPAStreamTypeFrame] = IPAStream(cfg.pixelFormat,
+										  cfg.size);
 			/*
 			 * Take color space from the frame if it exists,
 			 * or default to raw (IR only stream case).
 			 */
 			colorSpace = cfg.colorSpace.value_or(ColorSpace::Raw);
 		} else if (stream == &streamIr_) {
-			streamConfig[1] = IPAStream(cfg.pixelFormat, cfg.size);
+			streamConfig[ipa::nxpneo::IPAStreamTypeIr] = IPAStream(cfg.pixelFormat,
+									       cfg.size);
 		}
 	}
 
