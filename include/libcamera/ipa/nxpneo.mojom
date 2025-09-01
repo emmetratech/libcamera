@@ -73,6 +73,11 @@ struct SensorConfig {
 	bool rgbIr;
 };
 
+/* Stream type of the camera */
+enum IPAStreamType {
+	IPAStreamTypeFrame,
+	IPAStreamTypeIr,
+};
 
 /*
  * Those enums are mirrored in neo pipeline handler definitions in order to keep
