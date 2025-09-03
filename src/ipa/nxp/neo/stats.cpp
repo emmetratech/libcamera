@@ -101,7 +101,7 @@ NxpNeoStats::NxpNeoStats(uint32_t apiVersion, Span<uint8_t> data)
 			const BlockStatsTypeInfo &info = infoIt->second;
 
 			/* Check we received expected size, and that we are 8-bytes aligned. */
-			size_t size = (info.size + sizeof(struct neoisp_ext_params_block_header_s) + 7) & ~7;
+			size_t size = (info.size + sizeof(struct neoisp_ext_stats_block_header_s) + 7) & ~7;
 			if (size != hdr->size) {
 				LOG(NxpNeoStats, Error)
 					<< "Invalid statistics block size " << hdr->size
