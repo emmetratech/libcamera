@@ -119,7 +119,7 @@ const ControlInfoMap::Map nxpneoControls{
 } /* namespace */
 
 IPANxpNeo::IPANxpNeo()
-	: context_({ {}, {}, { kMaxFrameContexts }, {}, {} })
+	: context_(kMaxFrameContexts)
 {
 }
 
