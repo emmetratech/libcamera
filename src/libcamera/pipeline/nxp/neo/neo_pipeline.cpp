@@ -260,7 +260,7 @@ public:
 
 	CameraSensor *sensor() const { return sensor_.get(); }
 	NeoDevice *neoDevice() const { return neo_.get(); }
-	std::string cameraName() const { return sensor_->entity()->name(); }
+	const std::string &cameraName() const { return sensor_->entity()->name(); }
 	bool multiCamera() const { return cameraInfo_->cameraProperties().multiCamera; }
 	const std::map<Size, std::vector<unsigned int>> &
 	rawFormatsSizeToCodes() const { return rawFormatsSizeToCodes_; }
