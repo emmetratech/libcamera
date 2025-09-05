@@ -290,9 +290,9 @@ int IPANxpNeo::configure(const IPAConfigInfo &ipaConfig,
 	context_.configuration.sensor.bpp = bpp;
 
 	/* Active streams */
-	std::vector<IPAStream> &streams = context_.configuration.streams;
-	for (auto it = streamConfig.begin(); it != streamConfig.end(); it++)
-		streams.push_back(it->second);
+	std::map<IPAStreamType, IPAStream> &streams = context_.configuration.streams;
+	for (const auto &[streamType, config] : streamConfig)
+		streams[static_cast<IPAStreamType>(streamType)] = config;
 
 	context_.configuration.colorSpace = colorSpace;
 

@@ -63,7 +63,7 @@ struct IPASessionConfiguration {
 		struct neoisp_roi_cfg_s roi;
 	} drc;
 
-	std::vector<IPAStream> streams;
+	std::map<IPAStreamType, IPAStream> streams;
 
 	IPAColorSpace colorSpace;
 };

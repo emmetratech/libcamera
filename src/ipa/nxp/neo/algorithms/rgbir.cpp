@@ -165,9 +165,12 @@ void RgbIr::prepare([[maybe_unused]] IPAContext &context, const uint32_t frame,
 
 	/* Look for 8 or 16 bits IR stream, and defaults to 8 bits. */
 	bool irStream16bits = false;
-	IPAStream streamIr = context.configuration.streams[IPAStreamTypeIr];
-	if (streamIr.pixelFormat == formats::R16.fourcc())
-		irStream16bits = true;
+	auto it = context.configuration.streams.find(IPAStreamTypeIr);
+	if (it != context.configuration.streams.end()) {
+		IPAStream &streamIr = it->second;
+		if (streamIr.pixelFormat == formats::R16.fourcc())
+			irStream16bits = true;
+	}
 
 	/* IR Compression configuration */
 	RgbIr::IrCompression &comp =
