@@ -2594,22 +2594,22 @@ void NxpNeoCameraData::isiInputBufferReady(NxpNeoFrames::Info *info, ContextType
 	FrameBuffer *image0Buffer =
 		frameInfos_.buffer(info, context, BufferTypeImage0, false);
 	if (image0Buffer)
-		bufferIds[BufferTypeImage0] = image0Buffer->cookie();
+		bufferIds[ipa::nxpneo::IPABufferTypeImage0] = image0Buffer->cookie();
 
 	FrameBuffer *image1Buffer =
 		frameInfos_.buffer(info, context, BufferTypeImage1, false);
 	if (image1Buffer)
-		bufferIds[BufferTypeImage1] = image1Buffer->cookie();
+		bufferIds[ipa::nxpneo::IPABufferTypeImage1] = image1Buffer->cookie();
 
 	FrameBuffer *edataBuffer =
 		frameInfos_.buffer(info, context, BufferTypeEData, false);
 	if (edataBuffer)
-		bufferIds[BufferTypeEData] = edataBuffer->cookie();
+		bufferIds[ipa::nxpneo::IPABufferTypeEData] = edataBuffer->cookie();
 
 	FrameBuffer *paramsBuffer =
 		frameInfos_.buffer(info, context, BufferTypeParams, true);
 	ASSERT(paramsBuffer);
-		bufferIds[BufferTypeParams] = paramsBuffer->cookie();
+	bufferIds[ipa::nxpneo::IPABufferTypeParams] = paramsBuffer->cookie();
 
 	ipa_->computeParams(info->id,
 			    static_cast<ipa::nxpneo::IPAContextType>(context),
@@ -2794,7 +2794,7 @@ void NxpNeoCameraData::neoStatsBufferReady(FrameBuffer *buffer)
 	}
 
 	std::map<uint32_t, uint32_t> bufferIds = {
-		{ BufferTypeStats, buffer->cookie() },
+		{ ipa::nxpneo::IPABufferTypeStats, buffer->cookie() },
 	};
 
 	ipa_->processStats(info->id,
