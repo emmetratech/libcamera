@@ -2790,10 +2790,11 @@ void NxpNeoCameraData::neoStatsBufferReady(FrameBuffer *buffer)
 		{ ipa::nxpneo::IPABufferTypeStats, buffer->cookie() },
 	};
 
-	ipa_->processStats(info->id,
+	unsigned int sequence = info->id;
+	ipa_->processStats(sequence,
 			   static_cast<ipa::nxpneo::IPAContextType>(context),
 			   bufferIds,
-			   delayedCtrls_->get(buffer->metadata().sequence));
+			   delayedCtrls_->get(sequence));
 
 	tryCompleteRequest(info);
 }
