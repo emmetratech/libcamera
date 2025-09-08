@@ -306,7 +306,6 @@ private:
 	void neoOutputBufferReady(FrameBuffer *buffer);
 	void neoParamsBufferReady(FrameBuffer *buffer);
 	void neoStatsBufferReady(FrameBuffer *buffer);
-	void frameStart(uint32_t sequence);
 
 	void ipaParamsComputed(unsigned int id, ipa::nxpneo::IPAContextType context,
 			       unsigned int bytesused);
@@ -1872,8 +1871,6 @@ int NxpNeoCameraData::init()
 	else
 		mode_ = sensorIsRgbIr() ? ModeTypeRgbIrDual : ModeTypeHdrMerge;
 
-	neo_->isp_->frameStart.connect(this, &NxpNeoCameraData::frameStart);
-
 	/*
 	 * Connect video devices' 'bufferReady' signals to their
 	 * slot to implement the image processing pipeline.
@@ -2632,8 +2629,6 @@ void NxpNeoCameraData::isiImage0BufferReady(FrameBuffer *buffer)
 		return;
 	}
 
-	Request *request = info->request;
-
 	unsigned int seq = buffer->metadata().sequence;
 	if (seq != sequence_)
 		LOG(NxpNeoPipe, Warning)
@@ -2641,12 +2636,8 @@ void NxpNeoCameraData::isiImage0BufferReady(FrameBuffer *buffer)
 			<< " received " << seq;
 	sequence_ = seq + 1;
 
-	/*
-	 * Record the sensor's timestamp in the request metadata.
-	 *
-	 * \todo The sensor timestamp should be better estimated by connecting
-	 * to the V4L2Device::frameStart signal.
-	 */
+	/* Record the sensor's timestamp in the request metadata. */
+	Request *request = info->request;
 	request->metadata().set(controls::SensorTimestamp,
 				buffer->metadata().timestamp);
 
@@ -2654,6 +2645,8 @@ void NxpNeoCameraData::isiImage0BufferReady(FrameBuffer *buffer)
 		pipe()->completeBuffer(request, buffer);
 
 	isiInputBufferReady(info, context);
+
+	delayedCtrls_->applyControls(info->id);
 }
 
 /**
@@ -2803,15 +2796,6 @@ void NxpNeoCameraData::neoStatsBufferReady(FrameBuffer *buffer)
 			   delayedCtrls_->get(buffer->metadata().sequence));
 
 	tryCompleteRequest(info);
-}
-
-/*
- * \brief Handle the start of frame exposure signal
- * \param[in] sequence The sequence number of frame
- */
-void NxpNeoCameraData::frameStart(uint32_t sequence)
-{
-	delayedCtrls_->applyControls(sequence);
 }
 
 void NxpNeoCameraData::ipaParamsComputed(unsigned int id,
