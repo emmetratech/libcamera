@@ -50,6 +50,8 @@ struct IPAColorSpace {
 
 struct InitParams {
 	uint32 hwRevision;
+	uint32 hwCapabilities;
+	uint32 apiVersion;
 	string sensorEntity;
 	libcamera.IPACameraSensorInfo sensorInfo;
 	libcamera.ControlInfoMap sensorControls;
@@ -59,6 +61,11 @@ struct InitParams {
 struct IPAConfigInfo {
 	libcamera.IPACameraSensorInfo sensorInfo;
 	libcamera.ControlInfoMap sensorControls;
+	libcamera.ControlList sensorControlList;
+	IPAModeType mode;
+	IPAColorSpace colorSpace;
+	/* \todo remove when available from IPACameraSensorInfo */
+	uint32 bitsPerPixelAuxiliary;
 };
 
 struct DelayedControlsParams {
@@ -72,6 +79,11 @@ struct SensorConfig {
 	bool rgbIr;
 };
 
+/* Stream type of the camera */
+enum IPAStreamType {
+	IPAStreamTypeFrame,
+	IPAStreamTypeIr,
+};
 
 /*
  * Those enums are mirrored in neo pipeline handler definitions in order to keep
@@ -110,9 +122,7 @@ interface IPANxpNeoInterface {
 	stop();
 
 	configure(IPAConfigInfo configInfo,
-		  map<uint32, libcamera.IPAStream> streamConfig,
-		  IPAModeType mode,
-		  IPAColorSpace colorSpace)
+		  map<uint32, libcamera.IPAStream> streamConfig)
 		=> (int32 ret, libcamera.ControlInfoMap ipaControls);
 
 	mapBuffers(array<libcamera.IPABuffer> buffers);
@@ -125,7 +135,7 @@ interface IPANxpNeoInterface {
 };
 
 interface IPANxpNeoEventInterface {
-	paramsComputed(uint32 frame, IPAContextType context);
+	paramsComputed(uint32 frame, IPAContextType context, uint32 bytesused);
 	setSensorControls(uint32 frame, IPAContextType context, libcamera.ControlList sensorControls);
 	metadataReady(uint32 frame, IPAContextType context, libcamera.ControlList metadata);
 };

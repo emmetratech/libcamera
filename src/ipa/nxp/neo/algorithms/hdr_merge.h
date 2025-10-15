@@ -25,9 +25,11 @@ public:
 	~HdrMerge() = default;
 
 	int init(IPAContext &context, const YamlObject &tuningData) override;
+	int configure(IPAContext &context,
+		      const IPACameraSensorInfo &configInfo) override;
 	void prepare(IPAContext &context, const uint32_t frame,
 		     IPAFrameContext &frameContext,
-		     neoisp_meta_params_s *params) override;
+		     NxpNeoParams *params) override;
 
 private:
 	static constexpr size_t kNumImages = 2;
@@ -74,6 +76,8 @@ private:
 	std::vector<uint8_t> downscale_;
 	std::vector<uint8_t> upscale_;
 	uint8_t postscale_;
+
+	bool enabled_ = false;
 };
 
 } /* namespace ipa::nxpneo::algorithms */

@@ -27,17 +27,16 @@ public:
 	int init(IPAContext &context, const YamlObject &tuningData) override;
 	void prepare(IPAContext &context, const uint32_t frame,
 		     IPAFrameContext &frameContext,
-		     neoisp_meta_params_s *params) override;
+		     NxpNeoParams *Params) override;
 
 private:
-	static constexpr size_t kInAlignDefault = 1;
-	static constexpr size_t kLpAlignDefault = 1;
+	static constexpr uint8_t kLpAlignDefault = 1;
 
 	uint8_t inAlign0_;
-	uint8_t lpAlign0_;
+	std::optional<uint8_t> lpAlign0_;
 
 	uint8_t inAlign1_;
-	uint8_t lpAlign1_;
+	std::optional<uint8_t> lpAlign1_;
 };
 
 } /* namespace ipa::nxpneo::algorithms */

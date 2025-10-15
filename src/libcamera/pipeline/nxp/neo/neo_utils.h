@@ -56,6 +56,7 @@ struct CameraProperties {
 	bool image1Stream;
 	bool eDataStream;
 	bool multiCamera;
+	bool updateControlsOnIspSync;
 	std::optional<unsigned int> formatBpp;
 	std::optional<Size> formatSize;
 	std::optional<Orientation> orientation;
@@ -156,6 +157,8 @@ private:
 
 	GlobalInfo globalInfo_;
 };
+
+std::vector<MediaEntity *> locateSensors(MediaDevice *media);
 
 } // namespace nxpneo
 

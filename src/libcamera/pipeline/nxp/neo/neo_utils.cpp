@@ -37,6 +37,20 @@ namespace nxpneo {
  * \var CameraProperties::eDataStream
  * \brief Camera has a dedicated stream for embedded data
  *
+ * \var CameraProperties::multiCamera
+ * \brief Camera is sharing MIPI-CSI port with other cameras
+ *
+ * This flag reports that the camera is sharing its MIPI-CSI port with other
+ * cameras which induces some limitations in the capability of the front-end
+ * graph to be reconfigured after startup.
+ *
+ * \var CameraProperties::updateControlsOnIspSync
+ * \brief Camera controls are to be updated on ISP frame start event
+ *
+ * Default operation is to update the camera controls on ISI pipe buffer
+ * available event. To workaround some camera issues, this flag indicates that
+ * the camera controls update should be moved to the ISP frame start event.
+ *
  * \var CameraProperties::formatBpp
  * \brief Format bit-per-pixel filter value (optional)
  *
@@ -61,8 +75,8 @@ namespace nxpneo {
  * \var CameraProperties::multiCamera
  * \brief Camera is sharing its MIPI CSI-2 port with other cameras
  *
- * This structure reports to the pipeline handler a set of properties defined
- * in the configuration file, or detected during the discovery procedure.
+ * This structure reports to the pipeline handler a set of properties coming
+ * from the platform configuration file and the graph discovery.
  */
 
 /* -----------------------------------------------------------------------------
@@ -164,9 +178,8 @@ int PipelineConfig::load(const std::string &filename, std::shared_ptr<ISIDevice>
  * \param[in] name The name of the camera media device entity
  *
  * The CameraInfo structure carries information related to the integration
- * of the sensor into the media device. Data is acquired either via
- * automatic graph detection or through parsing of a platform configuration
- * file.
+ * of the sensor into the media device, coming from the platform configuration
+ * file and the graph discovery.
  *
  * \return The pointer to CameraInfo structure if it exists, nullptr otherwise
  */
@@ -281,12 +294,8 @@ int PipelineConfig::loadAutoDetect()
 			}
 		};
 
-	std::set<MediaEntity *, decltype(compareName)> sensorsEntities(compareName);
-	for (MediaEntity *e : media->entities()) {
-		if (e->function() != MEDIA_ENT_F_CAM_SENSOR)
-			continue;
-		sensorsEntities.insert(e);
-	}
+	std::vector<MediaEntity *> sensorsEntities = locateSensors(media);
+	std::sort(sensorsEntities.begin(), sensorsEntities.end(), compareName);
 
 	/* Discover the topology of every sensor */
 	ISIDevice *isiDevice = isiDevice_.get();
@@ -379,7 +388,7 @@ int PipelineConfig::loadAutoDetect()
 		}
 
 		/*
-		 * CameraInfo succesfully created
+		 * CameraInfo successfully created
 		 * - Store resulting entry into cameras database
 		 * - Merge camera streams routings to global routing
 		 * - Update the global streams map with the camera streams
@@ -836,6 +845,19 @@ int PipelineConfig::parseCameras(const YamlObject &cameras)
 					<< "Invalid orientation value " << orientation;
 		}
 
+		const YamlObject &controlsUpdateObj = cameraObj["controls-update"];
+		std::optional<std::string> controlsUpdate =
+			controlsUpdateObj.get<std::string>();
+		properties.updateControlsOnIspSync = false;
+		if (controlsUpdate) {
+			if (controlsUpdate.value() == "isp-sync")
+				properties.updateControlsOnIspSync = true;
+			else if (controlsUpdate.value() != "frame-available")
+				LOG(NxpNeoPipe, Warning)
+					<< "Invalid controls-update "
+					<< controlsUpdate.value();
+		}
+
 		LOG(NxpNeoPipe, Debug)
 			<< "Camera entry model [" << model
 			<< "] entity [" << entity
@@ -929,6 +951,76 @@ int PipelineConfig::loadFileConfig(const std::string &filename)
 			<< "Invalid cameras section in config file";
 
 	return ret;
+}
+
+/**
+ * \brief Locate the sensors (or ISP) from a media device
+ *
+ * Locate the media entities from the media devices acting as a sensor, either
+ * the sensor itself or the external ISP bundled to that sensor.
+ * This function is copied from the simple pipeline.
+ *
+ * \return A vector of media entities acting as a sensor
+ */
+std::vector<MediaEntity *> locateSensors(MediaDevice *media)
+{
+	std::vector<MediaEntity *> entities;
+
+	/*
+	 * Gather all the camera sensor entities based on the function they
+	 * expose.
+	 */
+	for (MediaEntity *entity : media->entities()) {
+		if (entity->function() == MEDIA_ENT_F_CAM_SENSOR)
+			entities.push_back(entity);
+	}
+
+	if (entities.empty())
+		return {};
+
+	/*
+	 * Sensors can be made of multiple entities. For instance, a raw sensor
+	 * can be connected to an ISP, and the combination of both should be
+	 * treated as one sensor. To support this, as a crude heuristic, check
+	 * the downstream entity from the camera sensor, and if it is an ISP,
+	 * use it instead of the sensor.
+	 */
+	std::vector<MediaEntity *> sensors;
+
+	for (MediaEntity *entity : entities) {
+		/*
+		 * Locate the downstream entity by following the first link
+		 * from a source pad.
+		 */
+		const MediaLink *link = nullptr;
+
+		for (const MediaPad *pad : entity->pads()) {
+			if ((pad->flags() & MEDIA_PAD_FL_SOURCE) &&
+			    !pad->links().empty()) {
+				link = pad->links()[0];
+				break;
+			}
+		}
+
+		if (!link)
+			continue;
+
+		MediaEntity *remote = link->sink()->entity();
+		if (remote->function() == MEDIA_ENT_F_PROC_VIDEO_ISP)
+			sensors.push_back(remote);
+		else
+			sensors.push_back(entity);
+	}
+
+	/*
+	 * Remove duplicates, in case multiple sensors are connected to the
+	 * same ISP.
+	 */
+	std::sort(sensors.begin(), sensors.end());
+	auto last = std::unique(sensors.begin(), sensors.end());
+	sensors.erase(last, sensors.end());
+
+	return sensors;
 }
 
 } // namespace nxpneo

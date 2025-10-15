@@ -31,6 +31,12 @@ namespace libcamera {
 
 namespace ipa::nxpneo {
 
+struct IPAHwSettings {
+	uint32_t hwRevision;
+	uint32_t hwCapabilities;
+	uint32_t apiVersion;
+};
+
 struct IPASessionConfiguration {
 	struct {
 		/* ROI for statistics measurements */
@@ -45,26 +51,26 @@ struct IPASessionConfiguration {
 	struct {
 		utils::Duration minExposureTime;
 		utils::Duration maxExposureTime;
+		utils::Duration defExposureTime;
 		double minAnalogueGain;
 		double maxAnalogueGain;
+		double defAnalogueGain;
 
 		int32_t defVBlank;
 		utils::Duration lineDuration;
 		Size size;
-		uint32_t bpp;
+		/* bpp per ISP input */
+		std::array<uint32_t, 2> bpps;
 	} sensor;
-
-	struct {
-		uint32_t revision;
-	} hw;
 
 	struct {
 		struct neoisp_roi_cfg_s roi;
 	} drc;
 
-	std::vector<IPAStream> streams;
+	std::map<IPAStreamType, IPAStream> streams;
 
 	IPAColorSpace colorSpace;
+	IPAModeType pipelineMode;
 };
 
 struct IPAActiveState {
@@ -140,6 +146,12 @@ struct IPAFrameContext : public FrameContext {
 };
 
 struct IPAContext {
+	IPAContext(unsigned int frameContextSize)
+		: frameContexts(frameContextSize)
+	{
+	}
+
+	IPAHwSettings hw;
 	IPASessionConfiguration configuration;
 	IPAActiveState activeState;
 
