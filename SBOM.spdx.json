@@ -1,0 +1,64 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "2025-10-22T08:43:06Z",
+    "creators": [
+      "Organization: NXP"
+    ],
+    "licenseListVersion": "3.20"
+  },
+  "name": "libcamera-libcamera--lf-6.12.49_2.2.0",
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://nxp.com/spdx/1da79339-8dc0-46cd-9587-0ad7f8d27430",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-package-1da79339-8dc0-46cd-9587-0ad7f8d27430",
+      "name": "libcamera",
+      "versionInfo": "libcamera--lf-6.12.49_2.2.0",
+      "licenseConcluded": "(LGPL-2.1-or-later)",
+      "licenseDeclared": "(LGPL-2.1-or-later)",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: NXP",
+      "supplier": "NOASSERTION",
+      "externalRefs": [],
+      "filesAnalyzed": false
+    },
+    {
+      "SPDXID": "SPDXRef-package-9665ded6-26a2-4515-a4cb-b70d0fac2e68",
+      "name": "libcamera",
+      "versionInfo": "0.5.2",
+      "licenseConcluded": "LGPL-2.1-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "homepage": "https://libcamera.org/",
+      "downloadLocation": "http://http.debian.net/debian/pool/main/libc/libcamera",
+      "originator": "Organization: debian",
+      "supplier": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/libcamera-ipa@0.5.2-3?arch=arm64",
+          "referenceType": "purl"
+        },
+        {
+          "referenceCategory": "OTHER",
+          "referenceLocator": "d5aeb00e-4142-4dd0-be1c-67ea09a5bbe2",
+          "referenceType": "BlackDuck-ComponentOrigin"
+        }
+      ],
+      "filesAnalyzed": false
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-package-1da79339-8dc0-46cd-9587-0ad7f8d27430"
+    },
+    {
+      "spdxElementId": "SPDXRef-package-1da79339-8dc0-46cd-9587-0ad7f8d27430",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-package-9665ded6-26a2-4515-a4cb-b70d0fac2e68"
+    }
+  ]
+}
